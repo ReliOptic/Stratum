@@ -66,11 +66,13 @@ def test_pydantic_codegen_roundtrip_fixtures() -> None:
         dumped = instance.model_dump(mode="json")
         schema = _load_json(CONTRACTS_DIR / schema_name)
         jsonschema.validate(instance=dumped, schema=schema)
-        reparsed = model_cls.model_validate(dumped)
-        assert reparsed == instance
+        assert model_cls.model_validate(dumped) == instance
 
 
-def test_additional_contract_models_roundtrip() -> None:
+def test_preset_objective_confirm_roundtrip() -> None:
+    target = m.Target(
+        metric_id="peak_temp_C", comparator=m.Comparator.lte, threshold=60.0, unit="C"
+    )
     samples: list[tuple[Any, str]] = [
         (
             m.Preset(
@@ -78,77 +80,59 @@ def test_additional_contract_models_roundtrip() -> None:
                 title="Reduce heat_source peak temperature",
                 rationale="Lower steady thermal stress on adjacent storage",
                 source_ids=["src-page-1"],
-                targets=[
-                    m.Target(
-                        metric_id="peak_temp_C",
-                        comparator=m.Comparator.lte,
-                        threshold=60.0,
-                        unit="C",
-                    )
-                ],
+                targets=[target],
             ),
             "preset.schema.json",
         ),
         (
             m.Objective(
                 text="Keep storage rise under 15 C",
-                targets=[
-                    m.Target(
-                        metric_id="storage_peak_rise_C",
-                        comparator=m.Comparator.lt,
-                        threshold=15.0,
-                        unit="C",
-                    )
-                ],
+                targets=[target],
                 base_revision=0,
                 objective_hash="sha256-abc123",
             ),
             "objective.schema.json",
         ),
         (
-            m.ConfirmResponse(
-                token="tok-123",
-                expires_at="2026-10-16T01:00:00Z",
-            ),
+            m.ConfirmResponse(token="tok-123", expires_at="2026-10-16T01:00:00Z"),
             "confirm_response.schema.json",
-        ),
-        (
-            m.PassReport(
-                revision=1,
-                part_id="core-stage",
-                pass_no=1,
-                action="Increase clearance and add spreader path",
-                prediction=m.Prediction(
-                    metric_id="peak_temp_C",
-                    expected_direction=m.ExpectedDirection.decrease,
-                    expected_delta=-5.0,
-                    falsified_if="peak_temp_C >= 68.4",
-                    registered_at="2026-10-16T00:05:00Z",
-                ),
-                metric_deltas=[
-                    m.MetricDelta(
-                        metric_id="peak_temp_C",
-                        before=68.4,
-                        after=62.1,
-                        delta=-6.3,
-                        unit="C",
-                    )
-                ],
-                verdict=m.PassVerdict.improved,
-                outcome=m.PredictionOutcome.confirmed,
-                external_outcome=None,
-                suspicious=False,
-                suspicious_reason=None,
-                fitted_adjustment=False,
-                at="2026-10-16T00:06:00Z",
-            ),
-            "pass_report.schema.json",
         ),
     ]
     for instance, schema_name in samples:
         dumped = instance.model_dump(mode="json")
         jsonschema.validate(instance=dumped, schema=_load_json(CONTRACTS_DIR / schema_name))
         assert type(instance).model_validate(dumped) == instance
+
+
+def test_pass_report_roundtrip() -> None:
+    report = m.PassReport(
+        revision=1,
+        part_id="core-stage",
+        pass_no=1,
+        action="Increase clearance and add spreader path",
+        prediction=m.Prediction(
+            metric_id="peak_temp_C",
+            expected_direction=m.ExpectedDirection.decrease,
+            expected_delta=-5.0,
+            falsified_if="peak_temp_C >= 68.4",
+            registered_at="2026-10-16T00:05:00Z",
+        ),
+        metric_deltas=[
+            m.MetricDelta(
+                metric_id="peak_temp_C", before=68.4, after=62.1, delta=-6.3, unit="C"
+            )
+        ],
+        verdict=m.PassVerdict.improved,
+        outcome=m.PredictionOutcome.confirmed,
+        external_outcome=None,
+        suspicious=False,
+        suspicious_reason=None,
+        fitted_adjustment=False,
+        at="2026-10-16T00:06:00Z",
+    )
+    dumped = report.model_dump(mode="json")
+    jsonschema.validate(instance=dumped, schema=_load_json(CONTRACTS_DIR / "pass_report.schema.json"))
+    assert m.PassReport.model_validate(dumped) == report
 
 
 def test_external_audit_and_telemetry_models_roundtrip() -> None:
@@ -177,7 +161,6 @@ def test_external_audit_and_telemetry_models_roundtrip() -> None:
         instance=ext.model_dump(mode="json"),
         schema=_load_json(CONTRACTS_DIR / "external_sim_result.schema.json"),
     )
-
     stats = m.RunStats(
         run_id="run-widget-a-001",
         orchestrator_model="gemini-4-argon",
@@ -204,10 +187,8 @@ def test_status_and_revision_constraints() -> None:
     assert "SIMULINK_EXECUTED" not in status_values
     assert "V0_READY" in status_values
     assert "V2_READY" in status_values
-
     ts_index = (CONTRACTS_DIR / "generated" / "ts" / "index.ts").read_text(encoding="utf-8")
     for expected_name in ("EngineeringSpec", "SimResult", "ExternalSimResult", "Run"):
         assert f"export interface {expected_name}" in ts_index
-
     with pytest.raises(Exception):
         m.ComponentGraph(run_id="run-widget-a-001", revision=4, edges=[])
