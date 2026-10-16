@@ -48,6 +48,7 @@ from stratum_cad.types import (
     SimSample,
     StressPulse,
 )
+from stratum_cad.vocabulary import vocabulary
 
 __all__ = [
     "BasisType",
@@ -92,4 +93,5 @@ __all__ = [
     "to_contract_manifest",
     "to_contract_metric_set",
     "to_contract_sim_result",
+    "vocabulary",
 ]

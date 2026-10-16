@@ -112,6 +112,7 @@ class MetricDef:
     title: str
     unit: str
     required_roles: list[PartRole]
+    description: str = ""
 
 
 @dataclass(frozen=True)

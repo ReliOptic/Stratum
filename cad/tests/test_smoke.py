@@ -54,10 +54,24 @@ def test_invalid_box_dim_raises_typed_error() -> None:
 
 def test_public_interface_exports() -> None:
     """Verify all required public functions and catalog entries exist."""
-    for name in ("compile_parts", "compute_metrics", "metric_catalog", "simulate", "export_test_box"):
+    for name in ("compile_parts", "compute_metrics", "metric_catalog", "simulate", "export_test_box", "vocabulary"):
         assert hasattr(stratum_cad, name)
     catalog = metric_catalog()
     assert len(catalog) == 8
+    for m in catalog:
+        assert len(m.description) > 20
+
+
+def test_vocabulary_spec_complete() -> None:
+    """Verify stratum_cad.vocabulary() includes all CadOps, bounds, examples, failures, and metrics."""
+    vocab_text = stratum_cad.vocabulary()
+    for op_name in ("box", "rounded_box", "cylinder", "sphere", "shell", "cut_box", "cut_cylinder"):
+        assert op_name in vocab_text
+    assert "Example 1:" in vocab_text and "Example 2:" in vocab_text
+    assert "Common failures:" in vocab_text
+    for m in metric_catalog():
+        assert m.metric_id in vocab_text
+        assert m.description in vocab_text
 
 
 def test_wall_thickness_and_dim_lower_bound_0_2mm() -> None:
