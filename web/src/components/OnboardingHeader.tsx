@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { formatMmSs } from "@/components/ReasoningStage";
 import { Badge } from "@/components/ui/badge";
 import type { RunStatus } from "@/lib/contracts";
 import { cn } from "@/lib/utils";
@@ -8,6 +9,7 @@ export interface OnboardingHeaderProps {
   readonly runId: string | null;
   readonly status: RunStatus | null;
   readonly sseConnected: boolean;
+  readonly elapsedSeconds?: number;
 }
 
 export function OnboardingHeader({
@@ -15,6 +17,7 @@ export function OnboardingHeader({
   runId,
   status,
   sseConnected,
+  elapsedSeconds = 0,
 }: OnboardingHeaderProps): React.JSX.Element {
   return (
     <header
@@ -37,6 +40,11 @@ export function OnboardingHeader({
         {runId && (
           <Badge variant="dim" data-testid="active-run-id">
             RUN {runId}
+          </Badge>
+        )}
+        {runId && (
+          <Badge variant="dim" data-testid="run-elapsed-timer" className="font-mono tabular-nums">
+            {formatMmSs(elapsedSeconds)}
           </Badge>
         )}
         {status && (

@@ -41,7 +41,7 @@ export function PromptBar({ onSubmitRun, busy }: PromptBarProps): React.JSX.Elem
   const [inputUrl, setInputUrl] = React.useState<string>("");
   const [inputMode, setInputMode] = React.useState<InputMode>("link");
   const [orchestratorModel, setOrchestratorModel] = React.useState<OrchestratorModel>("gemini-4-argon");
-  const [deepVerify, setDeepVerify] = React.useState<boolean>(true);
+  const [deepVerify, setDeepVerify] = React.useState<boolean>(false);
   const [attachments, setAttachments] = React.useState<readonly string[]>([]);
   const [attachmentError, setAttachmentError] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -76,10 +76,10 @@ export function PromptBar({ onSubmitRun, busy }: PromptBarProps): React.JSX.Elem
     >
       <div
         data-prompt-pill="true"
-        className="flex h-14 w-full items-center gap-2 rounded-full bg-panel/95 px-3 transition-all duration-200 ease-out"
+        className="flex h-14 w-full items-center gap-1.5 rounded-full bg-panel/95 px-2.5 transition-all duration-200 ease-out sm:gap-2 sm:px-3"
       >
         <DropdownMenu>
-          <DropdownMenuTrigger aria-label="Input mode" data-testid="input-mode-select" data-value={inputMode}>
+          <DropdownMenuTrigger aria-label="Input mode" data-testid="input-mode-select" data-value={inputMode} className="shrink-0">
             <span>{activeModeLabel}</span>
             <ChevronDown className="h-3.5 w-3.5 text-dim" />
           </DropdownMenuTrigger>
@@ -97,9 +97,9 @@ export function PromptBar({ onSubmitRun, busy }: PromptBarProps): React.JSX.Elem
           data-testid="product-url-input"
           value={inputUrl}
           onChange={(e) => setInputUrl(e.target.value)}
-          placeholder="Paste a product link, specification, or teardown source…"
+          placeholder="Paste a product link"
           aria-label="Product link"
-          className="h-10 min-w-32 flex-1 bg-transparent px-2 font-sans text-sm text-text caret-amber placeholder:text-dim focus:outline-none"
+          className="h-10 min-w-40 flex-1 bg-transparent px-1.5 font-sans text-sm text-text caret-amber placeholder:text-dim focus:outline-none sm:px-2"
         />
 
         <input
@@ -117,7 +117,7 @@ export function PromptBar({ onSubmitRun, busy }: PromptBarProps): React.JSX.Elem
           aria-label="Attach files"
           title={`Attach files (${attachments.length}/${appConfig.maxAttachments})`}
           onClick={() => fileInputRef.current?.click()}
-          className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-full bg-secondary/80 px-2.5 font-sans text-xs text-dim transition-colors duration-150 ease-out hover:bg-secondary hover:text-text"
+          className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-full bg-secondary/80 px-2 font-sans text-xs text-dim transition-colors duration-150 ease-out hover:bg-secondary hover:text-text sm:px-2.5"
         >
           <Paperclip className="h-3.5 w-3.5" />
           <span className="font-mono tabular-nums">{attachments.length}/{appConfig.maxAttachments}</span>

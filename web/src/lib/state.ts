@@ -144,9 +144,9 @@ export function computeExplodedPosition(
 ): readonly [number, number, number] {
   const clamped = Math.max(0, Math.min(1, explodeFactor));
   const [cx, cy, cz] = computePartCenterMm(part);
-  const vx = cx - assemblyCentroid[0], vy = cy - assemblyCentroid[1], vz = cz - assemblyCentroid[2];
-  const [dx, dy, dz] = Math.hypot(vx, vy, vz) > 0.001 ? [vx * 0.85, vy * 0.85 + 6, vz * 0.85 + 10] : [0, 12, 16];
-  return [cx + dx * clamped, cy + dy * clamped, cz + dz * clamped];
+  const vz = cz - assemblyCentroid[2];
+  const dz = Math.abs(vz) > 0.001 ? vz * 1.85 + Math.sign(vz) * 14 : 18;
+  return [cx, cy, cz + dz * clamped];
 }
 
 export interface RevisionTabItem {

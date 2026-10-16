@@ -33,14 +33,8 @@ const LINE_2_WORDS = [
   { text: "world ", idx: 7 },
 ] as const;
 
-function clamp01(v: number): number {
-  return Math.max(0, Math.min(1, v));
-}
-
-function easeOutCubic(t: number): number {
-  const c = clamp01(t);
-  return 1 - (1 - c) ** 3;
-}
+const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
+const easeOutCubic = (t: number): number => 1 - (1 - clamp01(t)) ** 3;
 
 function getInitialElapsedMs(): { readonly ms: number; readonly reduced: boolean } {
   if (typeof window === "undefined") return { ms: TOTAL_SEQ_MS, reduced: false };
@@ -74,13 +68,12 @@ function HeroHeadline({ elapsedMs, dockP }: { readonly elapsedMs: number; readon
   const sublineOpacity = clamp01((elapsedMs - 3000) / 500) * (1 - 0.3 * dockP);
   return (
     <div
-      className="relative z-10 mt-10 flex flex-col items-center text-center"
-      style={{
-        transform: `translateY(${(-6 * dockP).toFixed(2)}vh) scale(${(1 - 0.38 * dockP).toFixed(3)})`,
-        transformOrigin: "top center",
-      }}
+      data-testid="hero-headline-block"
+      data-hero-backdrop="true"
+      className="relative z-10 mt-1 flex flex-col items-center px-6 py-2 text-center"
+      style={{ transform: `scale(${(1 - 0.38 * dockP).toFixed(3)})`, transformOrigin: "top center", marginBottom: `${(-96 * dockP).toFixed(1)}px` }}
     >
-      <p data-testid="hero-kicker" data-saira-kicker="true" className="mb-3" style={{ opacity: kickerOpacity }}>
+      <p data-testid="hero-kicker" data-saira-kicker="true" className="mb-2" style={{ opacity: kickerOpacity }}>
         TRACK 02 — HARD TECH · STRATUM
       </p>
       <h1 data-testid="thesis-line" data-hero-h1="true" className="select-text text-center">
@@ -104,16 +97,12 @@ function HeroHeadline({ elapsedMs, dockP }: { readonly elapsedMs: number; readon
           className="block"
           data-testid="safer-word"
           data-safer-word={saferBloom ? "bloom" : "steady"}
-          style={{
-            opacity: saferP,
-            transform: `scale(${(1.04 - 0.04 * saferP).toFixed(3)})`,
-            filter: saferP < 1 ? `blur(${((1 - saferP) * 6).toFixed(1)}px)` : "none",
-          }}
+          style={{ opacity: saferP, transform: `scale(${(1.04 - 0.04 * saferP).toFixed(3)})`, filter: saferP < 1 ? `blur(${((1 - saferP) * 6).toFixed(1)}px)` : "none" }}
         >
           safer?
         </span>
       </h1>
-      <p data-testid="hero-subline" data-hero-subline="true" className="mt-4 max-w-xl" style={{ opacity: sublineOpacity }}>
+      <p data-testid="hero-subline" data-hero-subline="true" className="mt-2.5 max-w-xl" style={{ opacity: sublineOpacity }}>
         A closed engineering loop — evidence, design, simulation, audit.
       </p>
     </div>
@@ -177,6 +166,7 @@ export function HeroTitleSequence({ onSubmitRun, busy }: HeroTitleSequenceProps)
   const decodeP = clamp01((elapsedMs - 600) / 1600);
   const planetFade = clamp01((elapsedMs - 600) / 350);
   const dockP = easeOutCubic((elapsedMs - 5400) / 1000);
+  const globeOpacity = Number((planetFade * (0.35 + 0.5 * dockP)).toFixed(3));
   const scanlineP = elapsedMs >= 3900 && elapsedMs <= 4500 ? (elapsedMs - 3900) / 600 : null;
 
   return (
@@ -185,12 +175,15 @@ export function HeroTitleSequence({ onSubmitRun, busy }: HeroTitleSequenceProps)
       data-hero-stage="true"
       data-sequence-state={isDocked ? "docked" : "playing"}
       data-reduced-motion={init.reduced ? "true" : "false"}
+      onFocusCapture={() => {
+        if (!isDocked) finishImmediately();
+      }}
       onMouseMove={(e) => {
         const nx = (e.clientX / Math.max(1, window.innerWidth)) * 2 - 1;
         const ny = (e.clientY / Math.max(1, window.innerHeight)) * 2 - 1;
         setParallax({ x: Number((nx * 3.5).toFixed(2)), y: Number((ny * 3.5).toFixed(2)) });
       }}
-      className="pointer-events-auto relative flex h-full w-full flex-col items-center justify-between overflow-hidden px-4 py-8 transition-opacity duration-300 ease-out"
+      className="pointer-events-auto relative flex h-full w-full flex-col items-center justify-between overflow-hidden px-4 pt-3 pb-5 transition-opacity duration-300 ease-out"
     >
       <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full opacity-5">
         <filter id="stratum-film-grain"><feTurbulence type="fractalNoise" baseFrequency="0.82" numOctaves={3} stitchTiles="stitch" /></filter>
@@ -199,11 +192,15 @@ export function HeroTitleSequence({ onSubmitRun, busy }: HeroTitleSequenceProps)
       <div data-testid="hero-starfield" className="pointer-events-none absolute inset-0" style={{ opacity: planetFade, transform: `translate3d(${parallax.x}px, ${parallax.y}px, 0)` }}>
         {STARFIELD.map((s) => <span key={s.id} className="absolute block h-px w-px rounded-full bg-text" style={{ left: s.leftPct, top: s.topPct, opacity: s.opacity }} />)}
       </div>
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ opacity: planetFade * (1 - 0.15 * dockP), transform: `translate3d(${(parallax.x * 0.85).toFixed(2)}px, calc(${(4 * dockP).toFixed(2)}vh + ${(parallax.y * 0.85).toFixed(2)}px), 0) scale(${(1 - 0.1 * dockP).toFixed(3)})` }}>
-        <BaltamPlanet decodeProgress={decodeP} sunriseProgress={decodeP} scanlineProgress={scanlineP} whisperElapsedMs={Math.max(0, elapsedMs - 4400)} />
-      </div>
       <HeroHeadline elapsedMs={elapsedMs} dockP={dockP} />
-      <div data-testid="hero-prompt-dock" className="relative z-20 mb-2 flex w-full justify-center" style={{ opacity: dockP, transform: `translateY(${((1 - dockP) * 24).toFixed(1)}px)`, filter: dockP < 1 ? `blur(${((1 - dockP) * 6).toFixed(1)}px)` : "none" }}>
+      <div
+        data-testid="hero-planet-stage"
+        className="relative z-10 my-auto flex items-center justify-center"
+        style={{ opacity: planetFade, transform: `translate3d(${(parallax.x * 0.85).toFixed(2)}px, ${(parallax.y * 0.85).toFixed(2)}px, 0) scale(${(0.96 - 0.06 * dockP).toFixed(3)})` }}
+      >
+        <BaltamPlanet decodeProgress={decodeP} sunriseProgress={decodeP} scanlineProgress={scanlineP} whisperElapsedMs={Math.max(0, elapsedMs - 4400)} globeOpacity={globeOpacity} />
+      </div>
+      <div data-testid="hero-prompt-dock" className="relative z-20 flex w-full justify-center" style={{ opacity: dockP, transform: `translateY(${((1 - dockP) * 24).toFixed(1)}px)`, filter: dockP < 1 ? `blur(${((1 - dockP) * 6).toFixed(1)}px)` : "none" }}>
         <PromptBar onSubmitRun={onSubmitRun} busy={busy} />
       </div>
     </div>

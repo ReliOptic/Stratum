@@ -167,7 +167,7 @@ describe("Manifest, GLB node parser, and exploded view math", () => {
     const centroid = computeAssemblyCentroidMm(sampleManifest.parts);
     expect(centroid).toEqual([-6, 0, -1]);
     expect(computeExplodedPosition(sampleManifest.parts[1]!, 0, centroid)).toEqual([-12, 0, -2]);
-    expect(computeExplodedPosition(sampleManifest.parts[1]!, 1, centroid)[0]).toBeLessThan(-12);
+    expect(computeExplodedPosition(sampleManifest.parts[1]!, 1, centroid)[2]).toBeLessThan(-2);
     expect(parseGlbNodeNames(makeMinimalGlbBuffer(["part_outer-shell", "part_core-stage"]))).toEqual([
       "part_outer-shell",
       "part_core-stage",

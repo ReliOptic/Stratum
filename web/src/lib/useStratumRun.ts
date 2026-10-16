@@ -31,7 +31,7 @@ export interface StratumRunController {
   readonly selectPreset: (preset: Preset) => Promise<void>;
   readonly submitRun: (payload: ReconstructRequestPayload) => Promise<void>;
   readonly reviewCurrentObjective: (overrideText?: string, baseRevOverride?: number) => Promise<void>;
-  readonly confirmReviewedObjective: () => Promise<void>;
+  readonly confirmReviewedObjective: () => Promise<boolean>;
   readonly executeRevision: () => Promise<void>;
   readonly runMatlabOnline: () => Promise<void>;
   readonly importExternal: (mode: ExternalImportMode, files: readonly File[]) => Promise<void>;
@@ -119,15 +119,20 @@ export function useStratumRun(): StratumRunController {
     }
   };
 
-  const confirmReviewedObjective = async (): Promise<void> => {
-    if (!runId || !canConfirmReviewedObjective(objectiveDraft) || !objectiveDraft.objectiveHash) return;
+  const confirmReviewedObjective = async (): Promise<boolean> => {
+    if (!runId || !canConfirmReviewedObjective(objectiveDraft) || !objectiveDraft.objectiveHash) return false;
     setErrorBanner(null);
     try {
       const confirmation = await confirmObjectiveByHash(runId, objectiveDraft.baseRevision, objectiveDraft.objectiveHash);
       setObjectiveDraft((prev) => confirmObjectiveDraft(prev, confirmation));
-      setTelemetry((prev) => ({ ...prev, status: "OBJECTIVE_CONFIRMED" }));
+      const res = await triggerRevision(runId, objectiveDraft.baseRevision, confirmation.token);
+      setTelemetry((prev) => ({ ...prev, status: res.status, latestRevision: Math.max(prev.latestRevision, res.revision) }));
+      setActiveRevision(res.revision);
+      await refreshBundle(runId, res.revision);
+      return true;
     } catch (err: unknown) {
       captureError(err);
+      return false;
     }
   };
 

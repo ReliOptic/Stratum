@@ -78,6 +78,15 @@
     radial-gradient(ellipse at 50% 50%, rgba(5, 7, 10, 0) 42%, rgba(2, 3, 5, 0.92) 100%);
 }
 
+[data-hero-backdrop] {
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(5, 7, 10, 0.88) 0%,
+    rgba(5, 7, 10, 0.62) 65%,
+    rgba(5, 7, 10, 0) 100%
+  );
+}
+
 [data-hero-h1] {
   font-family: var(--font-sans);
   font-weight: 600;
