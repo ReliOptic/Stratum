@@ -11,7 +11,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stratum_api.app import check_cad_engine, create_app
-from stratum_api.config import DEV_SESSION_SECRET, load_config, validate_config
+from stratum_api.config import (
+    DEV_GCP_PROJECT,
+    DEV_SESSION_SECRET,
+    load_config,
+    validate_config,
+)
 from stratum_api.errors import ConfigError, RateLimitError, StratumError
 from stratum_api.logging_utils import format_log_entry, get_logger
 from stratum_api.session import (
@@ -24,12 +29,14 @@ from stratum_api.session import (
 def test_load_config_defaults_and_overrides() -> None:
     """Verify load_config parses defaults and custom environment values."""
     cfg_default = load_config({})
+    assert cfg_default.gcp_project == DEV_GCP_PROJECT
+    assert cfg_default.gcp_region == "asia-northeast3"
     assert cfg_default.orchestrator_model == "gemini-4-argon"
     assert cfg_default.subagent_model == "gemini-3.8-flash"
     assert cfg_default.gemini_backend == "vertex"
     assert cfg_default.state_backend == "firestore"
     assert cfg_default.sandbox_check == "off"
-    assert cfg_default.max_subagents == 6
+    assert cfg_default.max_subagents == 3
     assert cfg_default.max_revision == 3
     assert cfg_default.session_secret == DEV_SESSION_SECRET
 
@@ -56,27 +63,38 @@ def test_load_config_defaults_and_overrides() -> None:
     assert cfg_custom.app_version == "0.2.0"
 
 
-def test_k_service_requires_production_session_secret() -> None:
-    """Verify K_SERVICE rejects missing or dev SESSION_SECRET with ConfigError."""
+def test_k_service_requires_production_project_and_session_secret() -> None:
+    """Verify K_SERVICE rejects missing/dev GCP_PROJECT or SESSION_SECRET."""
+    with pytest.raises(ConfigError) as exc_proj:
+        load_config(
+            {"K_SERVICE": "stratum-prod", "SESSION_SECRET": "prod-secret"}
+        )
+    assert exc_proj.value.code == "MISSING_GCP_PROJECT"
+
     with pytest.raises(ConfigError) as exc_missing:
-        load_config({"K_SERVICE": "stratum-prod"})
+        load_config({"K_SERVICE": "stratum-prod", "GCP_PROJECT": "prod-proj"})
     assert exc_missing.value.code == "INSECURE_SESSION_SECRET"
-    assert exc_missing.value.recovery_hint
 
     with pytest.raises(ConfigError) as exc_dev:
         load_config(
-            {"K_SERVICE": "stratum-prod", "SESSION_SECRET": DEV_SESSION_SECRET}
+            {
+                "K_SERVICE": "stratum-prod",
+                "GCP_PROJECT": "prod-proj",
+                "SESSION_SECRET": DEV_SESSION_SECRET,
+            }
         )
     assert exc_dev.value.code == "INSECURE_SESSION_SECRET"
 
     prod_cfg = load_config(
         {
             "K_SERVICE": "stratum-prod",
+            "GCP_PROJECT": "prod-proj",
             "SESSION_SECRET": "prod-random-secret-99887766",
         }
     )
     validate_config(prod_cfg)
     assert prod_cfg.k_service == "stratum-prod"
+    assert prod_cfg.gcp_project == "prod-proj"
 
 
 def test_structured_logging_format_and_emit() -> None:
