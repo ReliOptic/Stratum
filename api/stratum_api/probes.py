@@ -12,6 +12,7 @@ from PIL import Image
 
 from stratum_api.config import AppConfig
 from stratum_api.errors import RateLimitError
+from stratum_api.gemini_client import create_interaction
 from stratum_api.logging_utils import get_logger
 
 logger = get_logger("stratum_api.probes")
@@ -100,7 +101,8 @@ def run_gemini_probe(
     ]
     try:
         active_client = client or build_genai_client(config)
-        interaction = active_client.interactions.create(
+        interaction = create_interaction(
+            active_client,
             model=config.orchestrator_model,
             input=prompt_input,
             tools=[{"type": "google_search"}],
@@ -142,13 +144,15 @@ def run_agent_probe(
     start = time.monotonic()
     try:
         active_client = client or build_genai_client(config)
-        active_client.interactions.create(
+        create_interaction(
+            active_client,
             agent="antigravity-preview-09-2026",
             agent_config={
                 "type": "antigravity",
                 "model": config.orchestrator_model,
             },
             environment="remote",
+            background=True,
             input="Compute 2+2 in Python and return only the integer result.",
         )
         latency_ms = round((time.monotonic() - start) * 1000.0, 2)

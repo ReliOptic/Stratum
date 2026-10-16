@@ -10,6 +10,12 @@ from fastapi.testclient import TestClient
 
 from stratum_api.app import create_app
 from stratum_api.config import load_config
+from stratum_api.gemini_client import (
+    create_interaction,
+    extract_interaction_text,
+    extract_json_object,
+    extract_usage_tokens,
+)
 from stratum_api.probes import (
     ProbeRateLimiter,
     build_genai_client,
@@ -21,17 +27,25 @@ from stratum_api.probes import (
 
 
 class _FakeInteractions:
-    """Stub interactions resource for unit testing probes."""
+    """Stub interactions resource for unit testing probes and background polling."""
 
-    def __init__(self, should_fail: bool = False) -> None:
+    def __init__(self, should_fail: bool = False, quota_failures: int = 0) -> None:
         self.should_fail = should_fail
+        self.quota_failures = quota_failures
         self.calls: list[dict[str, Any]] = []
+        self.get_calls: list[str] = []
 
     def create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
+        if self.quota_failures > 0:
+            self.quota_failures -= 1
+            raise RuntimeError("429 RESOURCE_EXHAUSTED: TPM quota exceeded")
         if self.should_fail:
             raise RuntimeError("Simulated upstream error")
+        is_bg = bool(kwargs.get("background"))
         return SimpleNamespace(
+            id="inter-001",
+            status="in_progress" if is_bg else "completed",
             steps=[
                 SimpleNamespace(
                     type="thought",
@@ -53,29 +67,42 @@ class _FakeInteractions:
                     summary=None,
                     content=[
                         SimpleNamespace(
+                            text='```json\n{"answer": 4}\n```',
                             annotations=[
                                 SimpleNamespace(
                                     type="url_citation",
                                     url="https://example.org",
                                 )
-                            ]
+                            ],
                         )
                     ],
                 ),
             ],
             usage=SimpleNamespace(
-                input_tokens=24,
-                output_tokens=12,
+                total_input_tokens=24,
+                total_output_tokens=12,
                 thought_tokens=8,
             ),
+        )
+
+    def get(self, *, id: str) -> Any:
+        self.get_calls.append(id)
+        return SimpleNamespace(
+            id=id,
+            status="completed",
+            text='{"answer": 4}',
+            steps=[],
+            usage=SimpleNamespace(total_input_tokens=10, total_output_tokens=5),
         )
 
 
 class _FakeGenAIClient:
     """Stub GenAI client wrapping _FakeInteractions."""
 
-    def __init__(self, should_fail: bool = False) -> None:
-        self.interactions = _FakeInteractions(should_fail=should_fail)
+    def __init__(self, should_fail: bool = False, quota_failures: int = 0) -> None:
+        self.interactions = _FakeInteractions(
+            should_fail=should_fail, quota_failures=quota_failures
+        )
 
 
 def test_make_tiny_png_and_inspect_interaction() -> None:
@@ -90,7 +117,32 @@ def test_make_tiny_png_and_inspect_interaction() -> None:
     assert inspected["thought_summary_supported"] is True
     assert "google_search_call" in inspected["grounding_fields_present"]
     assert "url_citation" in inspected["grounding_fields_present"]
-    assert "input_tokens" in inspected["usage_fields"]
+    assert "total_input_tokens" in inspected["usage_fields"]
+    assert extract_usage_tokens(interaction) == (24, 12)
+    text = extract_interaction_text(interaction)
+    assert extract_json_object(text) == {"answer": 4}
+
+
+def test_quota_backoff_and_background_polling() -> None:
+    """Verify 429 exponential backoff callback and background interaction polling."""
+    client = _FakeGenAIClient(quota_failures=2)
+    backoffs: list[tuple[int, float, str]] = []
+    sleeps: list[float] = []
+    res = create_interaction(
+        client,
+        model="gemini-4-argon",
+        input="test",
+        background=True,
+        base_delay_s=0.01,
+        poll_interval_s=0.01,
+        sleep_fn=sleeps.append,
+        on_quota_backoff=lambda att, d, msg: backoffs.append((att, d, msg)),
+    )
+    assert len(backoffs) == 2
+    assert backoffs[0][0] == 1
+    assert backoffs[1][0] == 2
+    assert client.interactions.get_calls == ["inter-001"]
+    assert res.status == "completed"
 
 
 def test_build_genai_client_apikey_mode() -> None:
@@ -114,7 +166,8 @@ def test_run_gemini_and_agent_probes_success_and_error() -> None:
 
     agent_res = run_agent_probe(cfg, client=ok_client)
     assert agent_res["available"] is True
-    assert isinstance(agent_res["latency_ms"], float)
+    assert ok_client.interactions.calls[-1].get("background") is True
+    assert ok_client.interactions.get_calls == ["inter-001"]
 
     fail_client = _FakeGenAIClient(should_fail=True)
     gemini_fail = run_gemini_probe(cfg, client=fail_client)
