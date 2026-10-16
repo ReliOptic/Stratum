@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stratum-bridge"
+version = "0.1.0"
+description = "Deterministic MATLAB/Simulink bridge and external result parsers for Stratum"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26.0",
+    "pydantic>=2.6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["stratum_bridge*"]
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]

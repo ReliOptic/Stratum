@@ -1,0 +1,8 @@
+method=type_k_surface_thermocouple
+instrument=synthetic_bench_logger_v1
+ambient_C=25.0
+sensor_enclosure_shell=top_center_outer
+sensor_core_heater= geometric_center
+sensor_thermal_spreader_plate=mid_plate
+sensor_storage_unit=proximal_face_center
+notes=Synthetic reference measurement for widget-a rev1
