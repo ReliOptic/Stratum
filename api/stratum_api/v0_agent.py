@@ -34,7 +34,10 @@ V0_SYSTEM_PROMPT = (
     "unit, status, basis_type, source_ids, basis_note}]}]}. "
     "Key off part roles only (enclosure, heat_source, energy_storage, power_conversion, "
     "thermal_spreader, structural_frame, user_contact_surface, connector, magnetic, fastener). "
-    "Every basis_type='source' parameter MUST cite retrieved source_ids. Never invent citations."
+    "Every basis_type='source' parameter MUST cite retrieved source_ids. Never invent citations. "
+    "Use EXACTLY these labels: status in OBSERVED|DOCUMENTED|INFERRED|ASSUMED|UNKNOWN; "
+    "basis_type in source|physics|model_prior; layer in surface|internal|kernel; "
+    "cad op in box|rounded_box|cylinder|shell|cut_box|cut_cylinder. Return one JSON object only."
 )
 
 

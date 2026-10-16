@@ -30,3 +30,14 @@ def test_invalid_output_fails_after_one_repair(monkeypatch: pytest.MonkeyPatch) 
 def test_try_parse_reports_error_instead_of_fallback() -> None:
     spec, err = v0_parse.try_parse_spec("{}", "run_x", [])
     assert spec is None and err
+
+
+def test_unknown_labels_are_downgraded_never_upgraded() -> None:
+    raw = {"parts": [{"layer": "Core", "roles": ["heat_source", "battery"],
+                      "parameters": [{"status": "specified", "basis_type": "estimated"},
+                                     {"status": "observed", "basis_type": "source"}]}]}
+    assert v0_parse.normalize_labels(raw) == 4
+    p = raw["parts"][0]
+    assert p["layer"] == "internal" and p["roles"] == ["heat_source"]
+    assert p["parameters"][0] == {"status": "ASSUMED", "basis_type": "model_prior"}
+    assert p["parameters"][1] == {"status": "OBSERVED", "basis_type": "source"}
