@@ -5,130 +5,125 @@ import {
   connectRunEventStream,
   createInitialTelemetryState,
   reduceRunEvent,
+  stageToTelemetryLayer,
 } from "@/lib/sse";
 
-describe("reduceRunEvent", () => {
-  it("reduces stage, usage, part_progress, thought_summary, and status events in sequence order", () => {
+describe("event reducer", () => {
+  it("maps EventStage to telemetry layers, tracks usage, part progress, thoughts, and ignores duplicate seq", () => {
+    expect(stageToTelemetryLayer("fetch")).toBe("surface");
+    expect(stageToTelemetryLayer("verify")).toBe("internal");
+    expect(stageToTelemetryLayer("cad")).toBe("kernel");
+
     let state = createInitialTelemetryState();
-
-    state = reduceRunEvent(state, {
+    const ev1: RunEvent = {
       seq: 1,
-      type: "stage",
-      stage: "surface_specs",
-      timestamp: "2026-10-16T11:20:00Z",
-    });
-    expect(state.activeStage).toBe("surface_specs");
+      run_id: "run-widget-a-001",
+      at: "2026-10-16T11:25:00Z",
+      stage: "v0",
+      level: "info",
+      message: "Extracting surface specifications",
+      data: {},
+    };
+    state = reduceRunEvent(state, ev1);
+    expect(state.activeStage).toBe("surface");
+    expect(state.lastSeq).toBe(1);
 
-    state = reduceRunEvent(state, {
+    // Duplicate seq is ignored
+    state = reduceRunEvent(state, { ...ev1, stage: "verify" });
+    expect(state.activeStage).toBe("surface");
+
+    const ev2: RunEvent = {
       seq: 2,
-      type: "usage",
-      usage: {
-        context_tokens: 48200,
-        sources_count: 6,
-        images_count: 3,
-        model_calls: 4,
+      run_id: "run-widget-a-001",
+      at: "2026-10-16T11:25:02Z",
+      stage: "verify",
+      part_id: "core-stage",
+      level: "info",
+      message: "Verified thermal dissipation from spec sheet",
+      data: {
+        usage: {
+          context_tokens: 48200,
+          output_tokens: 1800,
+          sources: 6,
+          images: 3,
+          model_calls: 4,
+        },
+        thought_summary: "Coupling core-stage to storage-cell via conduction",
       },
-      timestamp: "2026-10-16T11:20:01Z",
-    });
+    };
+    state = reduceRunEvent(state, ev2);
+    expect(state.activeStage).toBe("internal");
+    expect(state.completedStages).toContain("surface");
     expect(state.usage?.context_tokens).toBe(48200);
+    expect(state.usage?.sources).toBe(6);
+    expect(state.partProgress["core-stage"]).toBe("Verified thermal dissipation from spec sheet");
+    expect(state.thoughts).toEqual(["Coupling core-stage to storage-cell via conduction"]);
 
-    state = reduceRunEvent(state, {
+    const ev3: RunEvent = {
       seq: 3,
-      type: "part_progress",
-      part_id: "part_heat_01",
-      message: "Grounded 4 parameters",
-      timestamp: "2026-10-16T11:20:02Z",
-    });
-    expect(state.partProgress.part_heat_01).toBe("Grounded 4 parameters");
-
-    state = reduceRunEvent(state, {
-      seq: 4,
-      type: "thought_summary",
-      message: "Coupling thermal path on widget-a",
-      timestamp: "2026-10-16T11:20:03Z",
-    });
-    expect(state.thoughts).toEqual(["Coupling thermal path on widget-a"]);
-
-    state = reduceRunEvent(state, {
-      seq: 5,
-      type: "stage",
-      stage: "internal_evidence",
-      timestamp: "2026-10-16T11:20:04Z",
-    });
-    expect(state.completedStages).toEqual(["surface_specs"]);
-    expect(state.activeStage).toBe("internal_evidence");
-
-    state = reduceRunEvent(state, {
-      seq: 6,
-      type: "status",
-      status: "V0_READY",
-      revision: 0,
-      timestamp: "2026-10-16T11:20:05Z",
-    });
-    expect(state.status).toBe("V0_READY");
-
-    const duplicate = reduceRunEvent(state, {
-      seq: 2,
-      type: "thought_summary",
-      message: "Ignored old seq",
-      timestamp: "2026-10-16T11:20:06Z",
-    });
-    expect(duplicate).toBe(state);
+      run_id: "run-widget-a-001",
+      at: "2026-10-16T11:25:05Z",
+      stage: "revision",
+      revision: 1,
+      level: "info",
+      message: "V1 ready",
+      data: { status: "V1_READY" },
+    };
+    state = reduceRunEvent(state, ev3);
+    expect(state.status).toBe("V1_READY");
+    expect(state.latestRevision).toBe(1);
   });
 });
 
 describe("connectRunEventStream and reconnect", () => {
   it("builds events URL with after=seq and reconnects from latest seq on error", () => {
-    expect(buildEventsUrl("widget-a", 7, "/api")).toBe(
-      "/api/runs/widget-a/events?after=7",
-    );
-
     vi.useFakeTimers();
     const urls: string[] = [];
-    const received: RunEvent[] = [];
-    interface MockSource {
+    const instances: {
       onopen: (() => void) | null;
-      onmessage: ((e: MessageEvent<string>) => void) | null;
+      onmessage: ((ev: MessageEvent<string>) => void) | null;
       onerror: (() => void) | null;
       close: () => void;
-    }
-    const sources: MockSource[] = [];
+    }[] = [];
 
-    const cleanup = connectRunEventStream("widget-a", 0, {
+    const fakeFactory = (url: string): EventSource => {
+      urls.push(url);
+      const inst = {
+        onopen: null as (() => void) | null,
+        onmessage: null as ((ev: MessageEvent<string>) => void) | null,
+        onerror: null as (() => void) | null,
+        close: vi.fn(),
+      };
+      instances.push(inst);
+      return inst as unknown as EventSource;
+    };
+
+    const received: RunEvent[] = [];
+    const disconnect = connectRunEventStream("run-widget-a-001", 0, {
+      onEvent: (e) => received.push(e),
+      createEventSource: fakeFactory,
       reconnectDelayMs: 200,
-      onEvent: (ev) => received.push(ev),
-      createEventSource: (url: string) => {
-        urls.push(url);
-        const mock: MockSource = {
-          onopen: null,
-          onmessage: null,
-          onerror: null,
-          close: vi.fn(),
-        };
-        sources.push(mock);
-        return mock as unknown as EventSource;
-      },
     });
 
-    expect(urls).toEqual(["/api/runs/widget-a/events?after=0"]);
-    sources[0]?.onmessage?.({
+    expect(urls[0]).toBe(buildEventsUrl("run-widget-a-001", 0));
+    instances[0]?.onmessage?.({
       data: JSON.stringify({
         seq: 4,
-        type: "status",
-        status: "V0_READY",
-        timestamp: "2026-10-16T11:20:00Z",
+        run_id: "run-widget-a-001",
+        at: "2026-10-16T11:25:00Z",
+        stage: "cad",
+        level: "info",
+        message: "Compiled CAD",
+        data: {},
       }),
     } as MessageEvent<string>);
     expect(received).toHaveLength(1);
 
-    sources[0]?.onerror?.();
+    instances[0]?.onerror?.();
     vi.advanceTimersByTime(250);
-    expect(urls).toEqual([
-      "/api/runs/widget-a/events?after=0",
-      "/api/runs/widget-a/events?after=4",
-    ]);
+    expect(urls[1]).toBe(buildEventsUrl("run-widget-a-001", 4));
 
-    cleanup();
+    disconnect();
     vi.useRealTimers();
   });
 });

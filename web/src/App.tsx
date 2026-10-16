@@ -43,7 +43,7 @@ export function App(): React.JSX.Element {
 
         <TelemetryRail
           telemetry={ctrl.telemetry}
-          graph={ctrl.bundle.graph}
+          spec={ctrl.bundle.spec}
           selectedPartId={ctrl.selectedPartId}
           onSelectPart={ctrl.setSelectedPartId}
         />
@@ -62,7 +62,9 @@ export function App(): React.JSX.Element {
         variants={ctrl.bundle.variants}
         passes={ctrl.bundle.passes}
         metrics={ctrl.bundle.metrics}
-        simPoints={ctrl.bundle.simPoints}
+        baseMetrics={ctrl.bundle.baseMetrics}
+        sim={ctrl.bundle.sim}
+        baseSim={ctrl.bundle.baseSim}
         sandbox={ctrl.bundle.sandbox}
         benchmarks={ctrl.bundle.benchmarks}
         onRunMatlabOnline={() => void ctrl.runMatlabOnline()}

@@ -5,25 +5,26 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { appConfig } from "@/lib/config";
 import type {
-  BenchmarkEntry,
+  BenchmarkComparison,
   LoopNode,
-  MetricDiff,
-  ObjectivePreset,
-  PassPrediction,
+  MetricSet,
+  PassReport,
+  Preset,
   SandboxCheck,
-  SimPoint,
-  VariantCard,
+  SimResult,
+  Variant,
 } from "@/lib/contracts";
 import {
   canTriggerRevision,
   type ExternalImportMode,
+  formatTargetSummary,
   type ObjectiveDraftState,
   validateExternalResultsUpload,
 } from "@/lib/state";
 import type { StratumError } from "@/lib/utils";
 
 export interface ControlDeckProps {
-  readonly presets: readonly ObjectivePreset[];
+  readonly presets: readonly Preset[];
   readonly objectiveDraft: ObjectiveDraftState;
   readonly onUpdateDraftText: (text: string, presetId?: string | null) => void;
   readonly onRequestConfirmObjective: () => void;
@@ -32,12 +33,14 @@ export interface ControlDeckProps {
   readonly latestRevision: number;
   readonly activeRevision: number;
   readonly onSelectRevision: (rev: number) => void;
-  readonly variants: readonly VariantCard[];
-  readonly passes: readonly PassPrediction[];
-  readonly metrics: readonly MetricDiff[];
-  readonly simPoints: readonly SimPoint[];
+  readonly variants: readonly Variant[];
+  readonly passes: readonly PassReport[];
+  readonly metrics: MetricSet | null;
+  readonly baseMetrics: MetricSet | null;
+  readonly sim: SimResult | null;
+  readonly baseSim: SimResult | null;
   readonly sandbox: SandboxCheck | null;
-  readonly benchmarks: readonly BenchmarkEntry[];
+  readonly benchmarks: readonly BenchmarkComparison[];
   readonly onRunMatlabOnline: () => void;
   readonly onDownloadBridgeZip: () => void;
   readonly onImportExternalFiles: (mode: ExternalImportMode, files: readonly File[]) => void;
@@ -100,13 +103,13 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
               size="sm"
               variant={props.objectiveDraft.selectedPresetId === p.preset_id ? "default" : "outline"}
               data-testid={`preset-${p.preset_id}`}
-              onClick={() => props.onUpdateDraftText(p.description, p.preset_id)}
+              onClick={() => props.onUpdateDraftText(p.rationale, p.preset_id)}
             >
-              {p.label}
+              {p.title}
             </Button>
           ))}
         </div>
-        <div className="flex flex-1 items-center gap-2">
+        <div className="flex flex-1 flex-wrap items-center gap-2">
           <input
             type="text"
             data-testid="objective-input"
@@ -156,12 +159,14 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
           {uploadError && <span data-testid="upload-validation-error" className="text-danger">{uploadError}</span>}
         </div>
       )}
-      {(props.passes.length > 0 || props.metrics.length > 0 || props.simPoints.length > 0) && (
+      {Boolean(props.passes.length > 0 || props.metrics || props.sim) && (
         <RevisionPanel
           variants={props.variants}
           passes={props.passes}
           metrics={props.metrics}
-          simPoints={props.simPoints}
+          baseMetrics={props.baseMetrics}
+          sim={props.sim}
+          baseSim={props.baseSim}
           sandbox={props.sandbox}
           benchmarks={props.benchmarks}
         />
@@ -175,7 +180,9 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
             </div>
             <p className="text-text">{props.objectiveDraft.text}</p>
             <div className="flex flex-col gap-1 border-t border-hairline pt-2">
-              {props.objectiveDraft.normalizedTargets.map((t) => <div key={t} className="text-confirm">• {t}</div>)}
+              {props.objectiveDraft.targets.map((t) => (
+                <div key={t.metric_id} className="text-confirm">• {formatTargetSummary(t)}</div>
+              ))}
             </div>
             <div className="flex justify-end">
               <Button size="sm" variant="outline" onClick={() => setConfirmModalOpen(false)}>Close</Button>

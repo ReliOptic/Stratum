@@ -1,95 +1,82 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CONTRACTS_FIXTURES_DIR = path.resolve(__dirname, "../../contracts/fixtures/widget-a");
+const CAD_GLB_PATH = path.resolve(__dirname, "../../cad/fixtures/widget-a.glb");
+
+const readJsonFixture = (fileName: string): string =>
+  fs.readFileSync(path.join(CONTRACTS_FIXTURES_DIR, fileName), "utf-8");
 
 const jsonRoute = (body: unknown, status = 200) => ({
   status,
   contentType: "application/json",
-  body: JSON.stringify(body),
+  body: typeof body === "string" ? body : JSON.stringify(body),
 });
 
 async function registerWidgetARoutes(page: Page, getImported: () => boolean): Promise<void> {
-  await page.route("**/api/runs", (r) =>
-    r.fulfill(jsonRoute({ run_id: "widget-a", status: "V0_READY", revision: 0 })),
-  );
-  await page.route("**/api/runs/widget-a/events*", (r) => {
-    const u = {
+  const runJson = readJsonFixture("run.json");
+  const specV0 = readJsonFixture("spec_v0.json");
+  const graphV0 = readJsonFixture("graph_v0.json");
+  const manifestV0 = readJsonFixture("manifest_v0.json");
+  const metricsV0 = readJsonFixture("metrics_v0.json");
+  const simV0 = readJsonFixture("sim_v0.json");
+  const glbBytes = fs.readFileSync(CAD_GLB_PATH);
+
+  await page.route("**/api/runs", (r) => r.fulfill(jsonRoute(runJson)));
+  await page.route("**/api/runs/run-widget-a-001/events*", (r) => {
+    const ev1 = {
       seq: 1,
-      type: "usage",
-      usage: { context_tokens: 64200, sources_count: 5, images_count: 2, model_calls: 3 },
-      timestamp: "2026-10-16T11:25:00Z",
+      run_id: "run-widget-a-001",
+      at: "2026-10-16T11:25:00Z",
+      stage: "verify",
+      part_id: "core-stage",
+      level: "info",
+      message: "Verified core-stage dissipation",
+      data: {
+        usage: { context_tokens: 12400, output_tokens: 2150, sources: 1, images: 0, model_calls: 2 },
+        thought_summary: "Cross-checking core-stage conductive coupling to storage-cell",
+      },
     };
-    const s = { seq: 2, type: "stage", stage: "geometry_physics", timestamp: "2026-10-16T11:25:01Z" };
+    const ev2 = {
+      seq: 2,
+      run_id: "run-widget-a-001",
+      at: "2026-10-16T11:25:01Z",
+      stage: "cad",
+      level: "info",
+      message: "Compiled V0 geometry and RC network",
+      data: {},
+    };
     return r.fulfill({
       status: 200,
       contentType: "text/event-stream",
-      body: `data: ${JSON.stringify(u)}\n\ndata: ${JSON.stringify(s)}\n\n`,
+      body: `data: ${JSON.stringify(ev1)}\n\ndata: ${JSON.stringify(ev2)}\n\n`,
     });
   });
-  await page.route("**/api/runs/widget-a/graph*", (r) =>
-    r.fulfill(
-      jsonRoute({
-        revision: 0,
-        parts: [
-          {
-            part_id: "part_heat_01",
-            name: "Primary Core",
-            role: "heat_source",
-            parameters: [
-              {
-                key: "power_w",
-                label: "Dissipation",
-                value: 18.5,
-                unit: "W",
-                status: "DOCUMENTED",
-                basis_type: "source",
-                source_ids: ["src-01"],
-              },
-            ],
-          },
-        ],
-        edges: [
-          {
-            edge_id: "edge_01",
-            from_part_id: "part_heat_01",
-            to_part_id: "part_spreader_01",
-            kind: "thermal",
-            mechanism: "Conduction across interface",
-            source_ids: ["src-01"],
-          },
-        ],
-        sources: [{ source_id: "src-01", title: "Spec Sheet" }],
-      }),
-    ),
+  await page.route("**/api/runs/run-widget-a-001/spec*", (r) => r.fulfill(jsonRoute(specV0)));
+  await page.route("**/api/runs/run-widget-a-001/graph*", (r) => r.fulfill(jsonRoute(graphV0)));
+  await page.route("**/api/runs/run-widget-a-001/manifest*", (r) => r.fulfill(jsonRoute(manifestV0)));
+  await page.route("**/api/runs/run-widget-a-001/metrics*", (r) => r.fulfill(jsonRoute(metricsV0)));
+  await page.route("**/api/runs/run-widget-a-001/sim*", (r) => r.fulfill(jsonRoute(simV0)));
+  await page.route("**/api/runs/run-widget-a-001/artifacts/*.glb", (r) =>
+    r.fulfill({ status: 200, contentType: "model/gltf-binary", body: glbBytes }),
   );
-  await page.route("**/api/runs/widget-a/manifest*", (r) =>
-    r.fulfill(
-      jsonRoute({
-        revision: 0,
-        glb_url: "/api/runs/widget-a/artifacts/0.glb",
-        nodes: [
-          {
-            node_name: "node_heat",
-            part_id: "part_heat_01",
-            role: "heat_source",
-            center: [0, 0, 0],
-            explode_vector: [0, 1, 0],
-          },
-        ],
-      }),
-    ),
-  );
-  await page.route("**/api/runs/widget-a/presets*", (r) =>
+  await page.route("**/api/runs/run-widget-a-001/presets*", (r) =>
     r.fulfill(
       jsonRoute([
         {
           preset_id: "thermal_margin",
-          label: "Lower Peak Temp",
-          description: "Reduce steady-state temperature by 8C",
-          target_summary: "T_max <= 52C",
+          title: "Lower Peak Temp",
+          rationale: "Reduce steady-state temperature on core-stage and storage-cell",
+          source_ids: ["src-page-1"],
+          targets: [{ metric_id: "peak_temp_C", comparator: "lte", threshold: 58.0, unit: "C" }],
         },
       ]),
     ),
   );
-  await page.route("**/api/runs/widget-a/loop*", (r) => {
+  await page.route("**/api/runs/run-widget-a-001/loop*", (r) => {
     const imported = getImported();
     return r.fulfill(
       jsonRoute([
@@ -100,24 +87,24 @@ async function registerWidgetARoutes(page: Page, getImported: () => boolean): Pr
           refuted_count: 0,
           badges: imported ? ["simulated", "simulink-audited"] : ["simulated"],
           wall_time_s: 14,
-          context_tokens: 64200,
-          ...(imported ? { audit_match: true, max_delta_t_c: 0.7 } : {}),
+          context_tokens: 12400,
+          ...(imported ? { audit: "match", max_abs_diff_C: 0.7 } : {}),
         },
       ]),
     );
   });
-  for (const sub of ["variants", "passes", "metrics", "sim", "benchmarks"]) {
-    await page.route(`**/api/runs/widget-a/${sub}*`, (r) => r.fulfill(jsonRoute([])));
+  for (const sub of ["variants", "passes", "benchmarks"]) {
+    await page.route(`**/api/runs/run-widget-a-001/${sub}*`, (r) => r.fulfill(jsonRoute([])));
   }
-  await page.route("**/api/runs/widget-a/sandbox*", (r) => r.fulfill(jsonRoute(null)));
+  await page.route("**/api/runs/run-widget-a-001/sandbox*", (r) => r.fulfill(jsonRoute(null)));
 }
 
-test("onboarding dock, revise disabled before confirm, 409 path, and import audit badge", async ({
+test("G1-UI steps 1-3 with widget-a fixtures, 409 confirm guard, and import audit badge", async ({
   page,
 }, testInfo) => {
   let imported = false;
   await registerWidgetARoutes(page, () => imported);
-  await page.route("**/api/runs/widget-a/external-results", (r) => {
+  await page.route("**/api/runs/run-widget-a-001/external-results", (r) => {
     imported = true;
     return r.fulfill(
       jsonRoute({
@@ -133,32 +120,42 @@ test("onboarding dock, revise disabled before confirm, 409 path, and import audi
   await expect(page.getByTestId("thesis-line")).toContainText(
     "Can Gemini 4 Argon make the physical world safer?",
   );
+  await expect(page.getByTestId("subagent-note")).toContainText("Part sub-agents: Gemini 3.8 Flash");
 
   await page.getByTestId("product-url-input").fill("https://example.invalid/widget-a");
   await page.getByTestId("reconstruct-button").click();
+
   await expect(page.getByTestId("onboarding-header")).toHaveAttribute("data-docked", "true");
+  await expect(page.getByTestId("context-counter")).toContainText(
+    "Evidence in context: 12400 tokens · 1 sources · 0 images · 2 model calls",
+  );
+  await expect(page.getByTestId("evidence-ledger")).toContainText("Outer Shell (outer-shell)");
+  await page.getByTestId("rail-part-storage-cell").click();
+  await expect(page.getByTestId("param-row-clearance_to_heat_source")).toContainText("model_prior");
   await expect(page.getByTestId("revise-button")).toBeDisabled();
 
-  await page.route("**/api/runs/widget-a/objective", (r) => r.fulfill(jsonRoute({})));
-  await page.route("**/api/runs/widget-a/objective/confirm", (r) => r.fulfill(jsonRoute({}, 409)));
+  await page.route("**/api/runs/run-widget-a-001/objective", (r) =>
+    r.fulfill(
+      jsonRoute({
+        text: "Reduce widget-a peak temperature",
+        targets: [{ metric_id: "peak_temp_C", comparator: "lte", threshold: 58.0, unit: "C" }],
+        base_revision: 0,
+        objective_hash: "hash-widget-a-001",
+      }),
+    ),
+  );
+  await page.route("**/api/runs/run-widget-a-001/objective/confirm", (r) => r.fulfill(jsonRoute({}, 409)));
 
   await page.getByTestId("objective-input").fill("Reduce widget-a peak temperature");
   await page.getByTestId("open-confirm-modal-button").click();
   await expect(page.getByTestId("deck-error-banner")).toContainText("409");
   await page.getByRole("button", { name: "Close" }).click();
 
-  await page.unroute("**/api/runs/widget-a/objective/confirm");
-  await page.route("**/api/runs/widget-a/objective/confirm", (r) =>
-    r.fulfill(
-      jsonRoute({
-        confirm_token: "tok-widget-a-1",
-        base_revision: 0,
-        normalized_targets: ["T_max <= 52C"],
-        objective_text: "Reduce widget-a peak temperature",
-      }),
-    ),
+  await page.unroute("**/api/runs/run-widget-a-001/objective/confirm");
+  await page.route("**/api/runs/run-widget-a-001/objective/confirm", (r) =>
+    r.fulfill(jsonRoute({ token: "tok-widget-a-1", expires_at: "2026-10-16T13:00:00Z" })),
   );
-  await page.route("**/api/runs/widget-a/revisions", (r) =>
+  await page.route("**/api/runs/run-widget-a-001/revisions", (r) =>
     r.fulfill(jsonRoute({ revision: 1, status: "V1_READY" })),
   );
 
@@ -175,5 +172,5 @@ test("onboarding dock, revise disabled before confirm, 409 path, and import audi
   ]);
 
   await expect(page.getByTestId("audit-badge")).toContainText("AUDIT MATCH");
-  await page.screenshot({ path: `test-results/closed-loop-${testInfo.project.name}.png` });
+  await page.screenshot({ path: `test-results/g1-ui-${testInfo.project.name}.png` });
 });

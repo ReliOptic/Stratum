@@ -121,7 +121,9 @@ export function PromptBar({ onSubmitRun, busy }: PromptBarProps): React.JSX.Elem
               <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
             </select>
           </label>
-          <span className="text-dim">Part sub-agents: Gemini 3.8 Flash</span>
+          <span data-testid="subagent-note" className="text-dim">
+            Part sub-agents: Gemini 3.8 Flash
+          </span>
         </div>
 
         <label className="flex cursor-pointer items-center gap-1.5 text-text">

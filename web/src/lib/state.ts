@@ -1,5 +1,5 @@
 import { appConfig } from "@/lib/config";
-import type { CadManifest, ManifestNode, ObjectiveConfirmation } from "@/lib/contracts";
+import type { ConfirmResponse, Manifest, ManifestPart, Objective, Target } from "@/lib/contracts";
 import { createStratumError, type StratumError } from "@/lib/utils";
 
 export interface ObjectiveDraftState {
@@ -7,7 +7,9 @@ export interface ObjectiveDraftState {
   readonly text: string;
   readonly selectedPresetId: string | null;
   readonly confirmToken: string | null;
-  readonly normalizedTargets: readonly string[];
+  readonly expiresAt: string | null;
+  readonly targets: readonly Target[];
+  readonly objectiveHash: string | null;
 }
 
 export function createObjectiveDraftState(baseRevision: number = 0): ObjectiveDraftState {
@@ -16,7 +18,9 @@ export function createObjectiveDraftState(baseRevision: number = 0): ObjectiveDr
     text: "",
     selectedPresetId: null,
     confirmToken: null,
-    normalizedTargets: [],
+    expiresAt: null,
+    targets: [],
+    objectiveHash: null,
   };
 }
 
@@ -30,21 +34,39 @@ export function updateObjectiveDraft(
     text,
     selectedPresetId: presetId,
     confirmToken: null,
-    normalizedTargets: [],
+    expiresAt: null,
+    targets: [],
+    objectiveHash: null,
   };
 }
 
 export function confirmObjectiveDraft(
   state: ObjectiveDraftState,
-  confirmation: ObjectiveConfirmation,
+  objective: Objective,
+  confirmation: ConfirmResponse,
 ): ObjectiveDraftState {
   return {
     ...state,
-    baseRevision: confirmation.base_revision,
-    text: confirmation.objective_text,
-    confirmToken: confirmation.confirm_token,
-    normalizedTargets: confirmation.normalized_targets,
+    baseRevision: objective.base_revision,
+    text: objective.text,
+    confirmToken: confirmation.token,
+    expiresAt: confirmation.expires_at,
+    targets: objective.targets,
+    objectiveHash: objective.objective_hash,
   };
+}
+
+export function formatTargetSummary(target: Target): string {
+  const op =
+    target.comparator === "lte"
+      ? "<="
+      : target.comparator === "lt"
+        ? "<"
+        : target.comparator === "gte"
+          ? ">="
+          : ">";
+  const unitSuffix = target.unit ? ` ${target.unit}` : "";
+  return `${target.metric_id} ${op} ${target.threshold}${unitSuffix}`;
 }
 
 export function canTriggerRevision(
@@ -60,28 +82,37 @@ export function canTriggerRevision(
 }
 
 export function mapManifestToPartByNode(
-  manifest: CadManifest | null,
-): Readonly<Record<string, ManifestNode>> {
+  manifest: Manifest | null,
+): Readonly<Record<string, ManifestPart>> {
   if (!manifest) {
     return {};
   }
-  const map: Record<string, ManifestNode> = {};
-  for (const node of manifest.nodes) {
-    map[node.node_name] = node;
+  const map: Record<string, ManifestPart> = {};
+  for (const part of manifest.parts) {
+    map[part.glb_node] = part;
   }
   return map;
 }
 
+export function computePartCenterMm(part: ManifestPart): readonly [number, number, number] {
+  const [x0, y0, z0, x1, y1, z1] = part.bbox_mm;
+  return [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2];
+}
+
+export function computePartSizeMm(part: ManifestPart): readonly [number, number, number] {
+  const [x0, y0, z0, x1, y1, z1] = part.bbox_mm;
+  return [Math.max(1, x1 - x0), Math.max(1, y1 - y0), Math.max(1, z1 - z0)];
+}
+
 export function computeExplodedPosition(
-  node: ManifestNode,
+  part: ManifestPart,
   explodeFactor: number,
 ): readonly [number, number, number] {
   const clamped = Math.max(0, Math.min(1, explodeFactor));
-  return [
-    node.center[0] + node.explode_vector[0] * clamped,
-    node.center[1] + node.explode_vector[1] * clamped,
-    node.center[2] + node.explode_vector[2] * clamped,
-  ];
+  const [cx, cy, cz] = computePartCenterMm(part);
+  const mag = Math.hypot(cx, cy, cz);
+  const [dx, dy, dz] = mag > 0.001 ? [cx * 0.8, cy * 0.8 + 8, cz * 0.8 + 12] : [0, 15, 15];
+  return [cx + dx * clamped, cy + dy * clamped, cz + dz * clamped];
 }
 
 export interface RevisionTabItem {
@@ -134,7 +165,7 @@ export function validateExternalResultsUpload(
       error: createStratumError(
         "VALIDATION_ERROR",
         "Missing required lab file: measurement.csv",
-        "Attach measurement.csv and optional metadata JSON.",
+        "Attach measurement.csv and optional metadata.",
       ),
     };
   }

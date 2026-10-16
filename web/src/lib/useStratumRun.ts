@@ -25,13 +25,16 @@ import {
 import { createStratumError, isStratumError, type StratumError } from "@/lib/utils";
 
 const EMPTY_BUNDLE: RevisionBundle = {
+  spec: null,
   graph: null,
   manifest: null,
+  metrics: null,
+  baseMetrics: null,
+  sim: null,
+  baseSim: null,
   presets: [],
   variants: [],
   passes: [],
-  metrics: [],
-  simPoints: [],
   sandbox: null,
   loopNodes: [],
   benchmarks: [],
@@ -81,8 +84,8 @@ export function useStratumRun(): StratumRunController {
   const refreshBundle = React.useCallback(async (id: string, rev: number): Promise<void> => {
     const data = await fetchRevisionBundle(id, rev);
     setBundle(data);
-    if (data.graph && data.graph.parts.length > 0) {
-      setSelectedPartId((prev) => prev ?? data.graph?.parts[0]?.part_id ?? null);
+    if (data.spec && data.spec.parts.length > 0) {
+      setSelectedPartId((prev) => prev ?? data.spec?.parts[0]?.part_id ?? null);
     }
   }, []);
 
@@ -95,10 +98,10 @@ export function useStratumRun(): StratumRunController {
           if (next.latestRevision !== prev.latestRevision) {
             setActiveRevision(next.latestRevision);
             void refreshBundle(runId, next.latestRevision);
-          } else if (ev.type === "status" || ev.type === "external_results") {
+          } else if (ev.stage === "import" || typeof ev.data.status === "string") {
             void refreshBundle(runId, activeRevision);
           }
-          if (ev.type === "external_results") {
+          if (ev.stage === "import" || ev.data.status === "EXTERNAL_RESULTS_IMPORTED") {
             setMatlabWaitingExpiry(null);
             setExternalImported(true);
           }
@@ -115,10 +118,16 @@ export function useStratumRun(): StratumRunController {
     setErrorBanner(null);
     try {
       const created = await createRun(payload);
+      const rev = created.latest_revision ?? 0;
       setRunId(created.run_id);
-      setTelemetry((prev) => ({ ...prev, status: created.status, latestRevision: created.revision }));
-      setActiveRevision(created.revision);
-      await refreshBundle(created.run_id, created.revision);
+      setTelemetry((prev) => ({
+        ...prev,
+        status: created.status,
+        latestRevision: rev,
+        usage: created.usage ?? prev.usage,
+      }));
+      setActiveRevision(rev);
+      await refreshBundle(created.run_id, rev);
     } catch (err: unknown) {
       captureError(err);
     } finally {
@@ -130,8 +139,8 @@ export function useStratumRun(): StratumRunController {
     if (!runId || !objectiveDraft.text.trim()) return;
     setErrorBanner(null);
     try {
-      const conf = await confirmObjective(runId, activeRevision, objectiveDraft.text);
-      setObjectiveDraft((prev) => confirmObjectiveDraft(prev, conf));
+      const { objective, confirmation } = await confirmObjective(runId, activeRevision, objectiveDraft.text);
+      setObjectiveDraft((prev) => confirmObjectiveDraft(prev, objective, confirmation));
     } catch (err: unknown) {
       captureError(err);
     }
@@ -183,7 +192,7 @@ export function useStratumRun(): StratumRunController {
     startNextRound: () => setObjectiveDraft({
       baseRevision: telemetry.latestRevision,
       text: nextRoundObjective || "Refine design based on external audit",
-      selectedPresetId: null, confirmToken: null, normalizedTargets: [],
+      selectedPresetId: null, confirmToken: null, expiresAt: null, targets: [], objectiveHash: null,
     }),
   };
 }

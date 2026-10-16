@@ -74,14 +74,14 @@ export function LoopStrip({
                   {b}
                 </Badge>
               ))}
-              {typeof node.audit_match === "boolean" && (
+              {node.audit && node.audit !== "not_applicable" && (
                 <Badge
-                  variant={node.audit_match ? "confirm" : "danger"}
+                  variant={node.audit === "match" ? "confirm" : "danger"}
                   data-testid="audit-badge"
                 >
-                  {node.audit_match ? "AUDIT MATCH" : "AUDIT MISMATCH"}
-                  {typeof node.max_delta_t_c === "number"
-                    ? ` · max ΔT ${node.max_delta_t_c.toFixed(1)}°C`
+                  {node.audit === "match" ? "AUDIT MATCH" : `AUDIT ${node.audit.toUpperCase()}`}
+                  {typeof node.max_abs_diff_C === "number"
+                    ? ` · max ΔT ${node.max_abs_diff_C.toFixed(1)}°C`
                     : ""}
                 </Badge>
               )}
