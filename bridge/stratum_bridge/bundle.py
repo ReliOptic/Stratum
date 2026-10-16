@@ -130,6 +130,16 @@ def _format_handoff_spec(
     return "\n".join(lines) + "\n"
 
 
+def _format_copilot_prompt() -> str:
+    """Format 3-4 line prompt for MATLAB Copilot Chat."""
+    return (
+        "Attached is agent_handoff_spec.txt from Stratum's thermal audit.\n"
+        "1. Summarize V0 vs V1 peak temperatures and thermal margins from results.csv.\n"
+        "2. List INPUTS_REQUIRED with physically realistic suggested ranges, labeling suggestions as assumptions.\n"
+        "3. Propose one sensitivity sweep (e.g. ambient convection h or interface conductance) to stress-test margins.\n"
+    )
+
+
 def build_bundle(
     run: str | Any, base: EngineeringSpec | Any, new: EngineeringSpec | Any,
     m_base: MetricSet | Any, m_new: MetricSet | Any, sim_base: SimResult | Any, sim_new: SimResult | Any,
@@ -147,15 +157,17 @@ def build_bundle(
 
     members: dict[str, bytes] = {
         "agent_handoff_spec.txt": _format_handoff_spec(run_id, net_base, net_new, m_base, m_new, graph).encode("utf-8"),
+        "copilot_prompt.txt": _format_copilot_prompt().encode("utf-8"),
         "parameters.csv": _format_parameters_csv(net_base, net_new).encode("utf-8"),
         "stress_scenario_timeseries.csv": _format_scenario_csv(base, new).encode("utf-8"),
         "expected_results.csv": _format_expected_csv(sim_base, sim_new).encode("utf-8"),
-        "run_stratum_experiment.m": generate_experiment_script(base.revision, new.revision).encode("ascii"),
+        "run_stratum_experiment.m": generate_experiment_script(base.revision, new.revision).encode("utf-8"),
         f"rev{base.revision}.step": step_base,
         f"rev{new.revision}.step": step_new,
         "README_bundle.txt": (
             f"Stratum Verification Bundle (run_id={run_id}, rev{base.revision}->rev{new.revision})\n"
             "Run `run_stratum_experiment` in MATLAB or use `stratum.m` in MATLAB Online.\n"
+            "Next: attach agent_handoff_spec.txt in Copilot Chat and paste copilot_prompt.txt\n"
         ).encode("utf-8"),
     }
     member_hashes = [f"{name}={hashlib.sha256(data).hexdigest()}" for name, data in sorted(members.items())]

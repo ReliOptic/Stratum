@@ -54,18 +54,23 @@ def test_build_bundle_and_matlab_script_and_eigenvalues() -> None:
     )
     with zipfile.ZipFile(io.BytesIO(bundle_bytes), "r") as zf:
         expected_members = {
-            "agent_handoff_spec.txt", "parameters.csv", "stress_scenario_timeseries.csv",
+            "agent_handoff_spec.txt", "copilot_prompt.txt", "parameters.csv", "stress_scenario_timeseries.csv",
             "expected_results.csv", "bundle_manifest.txt", "run_stratum_experiment.m",
             "rev0.step", "rev1.step", "README_bundle.txt",
         }
         assert expected_members.issubset(set(zf.namelist()))
+        copilot_text = zf.read("copilot_prompt.txt").decode("utf-8")
+        assert "INPUTS_REQUIRED" in copilot_text
+        assert "sensitivity sweep" in copilot_text
         m_script = zf.read("run_stratum_experiment.m").decode("utf-8")
-        assert m_script.isascii()
         assert "[sprintf(" not in m_script
         assert 'man = ["run_id=" + string(run_id);' in m_script
         assert "disp(line);" in m_script
         assert 'vis = "on";' in m_script
         assert "fig = figure('Visible', char(vis));" in m_script
+        assert "'Interpreter', 'none'" in m_script
+        assert " · " in m_script
+        assert "Next: attach agent_handoff_spec.txt in Copilot Chat and paste copilot_prompt.txt" in m_script
         assert _count_matlab_blocks_and_ends(m_script)[0] == _count_matlab_blocks_and_ends(m_script)[1]
         assert "INPUTS_REQUIRED:" in zf.read("agent_handoff_spec.txt").decode("utf-8")
 
