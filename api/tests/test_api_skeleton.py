@@ -7,11 +7,12 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from stratum_api.app import check_cad_engine, create_app
-from stratum_api.config import load_config
-from stratum_api.errors import RateLimitError, StratumError
+from stratum_api.config import DEV_SESSION_SECRET, load_config, validate_config
+from stratum_api.errors import ConfigError, RateLimitError, StratumError
 from stratum_api.logging_utils import format_log_entry, get_logger
 from stratum_api.session import (
     COOKIE_NAME,
@@ -30,6 +31,7 @@ def test_load_config_defaults_and_overrides() -> None:
     assert cfg_default.sandbox_check == "off"
     assert cfg_default.max_subagents == 6
     assert cfg_default.max_revision == 3
+    assert cfg_default.session_secret == DEV_SESSION_SECRET
 
     cfg_custom = load_config(
         {
@@ -52,6 +54,29 @@ def test_load_config_defaults_and_overrides() -> None:
     assert cfg_custom.max_subagents == 4
     assert cfg_custom.max_revision == 2
     assert cfg_custom.app_version == "0.2.0"
+
+
+def test_k_service_requires_production_session_secret() -> None:
+    """Verify K_SERVICE rejects missing or dev SESSION_SECRET with ConfigError."""
+    with pytest.raises(ConfigError) as exc_missing:
+        load_config({"K_SERVICE": "stratum-prod"})
+    assert exc_missing.value.code == "INSECURE_SESSION_SECRET"
+    assert exc_missing.value.recovery_hint
+
+    with pytest.raises(ConfigError) as exc_dev:
+        load_config(
+            {"K_SERVICE": "stratum-prod", "SESSION_SECRET": DEV_SESSION_SECRET}
+        )
+    assert exc_dev.value.code == "INSECURE_SESSION_SECRET"
+
+    prod_cfg = load_config(
+        {
+            "K_SERVICE": "stratum-prod",
+            "SESSION_SECRET": "prod-random-secret-99887766",
+        }
+    )
+    validate_config(prod_cfg)
+    assert prod_cfg.k_service == "stratum-prod"
 
 
 def test_structured_logging_format_and_emit() -> None:
@@ -107,21 +132,21 @@ def test_session_signing_and_verification() -> None:
     assert verify_session_token(signed, "wrong-secret") is None
 
 
-def test_check_cad_engine_with_stub_module(monkeypatch: object) -> None:
-    """Verify check_cad_engine succeeds when stratum_cad exports a STEP file."""
+def test_check_cad_engine_with_stub_module() -> None:
+    """Verify check_cad_engine succeeds when stratum_cad exports STEP bytes."""
     fake_mod = types.ModuleType("stratum_cad")
-
-    def _export_test_box(path: Path, size_mm: float = 10.0) -> None:
-        Path(path).write_text(f"ISO-10303-21; BOX {size_mm};\n", encoding="utf-8")
-
-    fake_mod.export_test_box = _export_test_box  # type: ignore[attr-defined]
+    fake_mod.build_smoke_box_step = lambda size_mm=10.0: b"ISO-10303-21;"  # type: ignore[attr-defined]
+    prev = sys.modules.get("stratum_cad")
     sys.modules["stratum_cad"] = fake_mod
     try:
         ok, reason = check_cad_engine()
         assert ok is True
         assert reason is None
     finally:
-        sys.modules.pop("stratum_cad", None)
+        if prev is not None:
+            sys.modules["stratum_cad"] = prev
+        else:
+            sys.modules.pop("stratum_cad", None)
 
 
 def test_health_endpoint_and_session_cookie(tmp_path: Path) -> None:

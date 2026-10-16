@@ -6,9 +6,13 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
+from stratum_api.errors import ConfigError
+
 GeminiBackend = Literal["vertex", "apikey"]
 StateBackend = Literal["firestore", "gcs"]
 SandboxCheckMode = Literal["off", "on"]
+
+DEV_SESSION_SECRET = "stratum-local-dev-secret-change-in-prod"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +36,7 @@ class AppConfig:
     app_version: str
     port: int
     web_dist_dir: str
+    k_service: str | None = None
 
 
 def _parse_gemini_backend(raw: str) -> GeminiBackend:
@@ -55,6 +60,24 @@ def _parse_sandbox_check(raw: str) -> SandboxCheckMode:
     return "off"
 
 
+def validate_config(config: AppConfig) -> None:
+    """Fail at startup if K_SERVICE is set and SESSION_SECRET is missing or dev."""
+    if config.k_service and (
+        not config.session_secret or config.session_secret == DEV_SESSION_SECRET
+    ):
+        raise ConfigError(
+            code="INSECURE_SESSION_SECRET",
+            message=(
+                "SESSION_SECRET must not be missing or equal to the dev default "
+                "when running in Cloud Run (K_SERVICE is set)."
+            ),
+            recovery_hint=(
+                "Configure a strong random SESSION_SECRET environment variable "
+                "on the Cloud Run service."
+            ),
+        )
+
+
 def load_config(environ: dict[str, str] | None = None) -> AppConfig:
     """Load application configuration from environment variables."""
     env = environ if environ is not None else dict(os.environ)
@@ -65,7 +88,10 @@ def load_config(environ: dict[str, str] | None = None) -> AppConfig:
         item.strip() for item in raw_allowed.split(",") if item.strip()
     )
     api_key = env.get("GEMINI_API_KEY", "").strip() or None
-    return AppConfig(
+    k_service = env.get("K_SERVICE", "").strip() or None
+    raw_secret = env.get("SESSION_SECRET", "").strip()
+    session_secret = raw_secret if k_service else (raw_secret or DEV_SESSION_SECRET)
+    cfg = AppConfig(
         gcp_project=env.get("GCP_PROJECT", "stratum-dev").strip(),
         gcp_region=env.get("GCP_REGION", "us-central1").strip(),
         gemini_backend=_parse_gemini_backend(
@@ -85,10 +111,11 @@ def load_config(environ: dict[str, str] | None = None) -> AppConfig:
         state_backend=_parse_state_backend(
             env.get("STATE_BACKEND", "firestore")
         ),
-        session_secret=env.get(
-            "SESSION_SECRET", "stratum-local-dev-secret-change-in-prod"
-        ),
+        session_secret=session_secret,
         app_version=env.get("APP_VERSION", "0.1.0").strip(),
         port=int(env.get("PORT", "8080")),
         web_dist_dir=env.get("WEB_DIST_DIR", "web/dist").strip(),
+        k_service=k_service,
     )
+    validate_config(cfg)
+    return cfg

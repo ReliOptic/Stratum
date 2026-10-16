@@ -39,6 +39,18 @@ class StratumError(Exception):
         return payload
 
 
+class ConfigError(StratumError):
+    """Raised when required runtime configuration is missing or insecure."""
+
+    def __init__(self, code: str, message: str, recovery_hint: str) -> None:
+        super().__init__(
+            code=code,
+            message=message,
+            recovery_hint=recovery_hint,
+            status_code=500,
+        )
+
+
 class RateLimitError(StratumError):
     """Raised when an endpoint or probe exceeds its rate limit."""
 

@@ -11,7 +11,7 @@ from typing import Any, AsyncIterator
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from stratum_api.config import AppConfig, load_config
+from stratum_api.config import AppConfig, load_config, validate_config
 from stratum_api.errors import register_error_handlers
 from stratum_api.logging_utils import get_logger
 from stratum_api.probes import (
@@ -28,6 +28,11 @@ def check_cad_engine() -> tuple[bool, str | None]:
     """Attempt to import stratum_cad and export a 10 mm box to STEP."""
     try:
         cad_mod = importlib.import_module("stratum_cad")
+        if hasattr(cad_mod, "build_smoke_box_step"):
+            step_bytes = cad_mod.build_smoke_box_step(size_mm=10.0)
+            if not step_bytes:
+                return False, "STEP export returned empty bytes"
+            return True, None
         with tempfile.TemporaryDirectory() as tmp_dir:
             step_path = Path(tmp_dir) / "probe_box.step"
             if hasattr(cad_mod, "export_test_box"):
@@ -51,6 +56,7 @@ def create_app(
 ) -> FastAPI:
     """Create and configure the Stratum FastAPI application."""
     cfg = config or load_config()
+    validate_config(cfg)
     limiter = ProbeRateLimiter(cooldown_s=probe_cooldown_s)
 
     @asynccontextmanager
