@@ -55,13 +55,23 @@ class _FakeHttpClient:
         return _FakeHttpResponse(200, {"content-type": "text/html; charset=utf-8"}, html)
 
 
+_FIXTURE_SPEC_TEXT = (
+    __import__("pathlib").Path(__file__).resolve().parents[2] / "contracts" / "fixtures" / "widget-a" / "spec_v0.json"
+).read_text()
+_FIXED = __import__("json").loads(_FIXTURE_SPEC_TEXT)
+for _p in _FIXED["parts"]:
+    if _p["part_id"] == "storage-cell":
+        _p["cad_ops"][0]["placement"]["x"] = 18.0
+_FIXTURE_REPAIRED_TEXT = __import__("json").dumps(_FIXED)
+
+
 class _FakeLoopInteractions:
     def create(self, **kwargs: Any) -> Any:
-        _ = kwargs
+        repaired = "CAD kernel rejected" in str(kwargs.get("input", ""))
         return SimpleNamespace(
             id="inter-loop-1",
             status="completed",
-            text="",
+            text=_FIXTURE_REPAIRED_TEXT if repaired else _FIXTURE_SPEC_TEXT,
             steps=[],
             usage=SimpleNamespace(total_input_tokens=150, total_output_tokens=80),
         )
@@ -70,7 +80,7 @@ class _FakeLoopInteractions:
         return SimpleNamespace(
             id=id,
             status="completed",
-            text="",
+            text=_FIXTURE_SPEC_TEXT,
             steps=[],
             usage=SimpleNamespace(total_input_tokens=150, total_output_tokens=80),
         )

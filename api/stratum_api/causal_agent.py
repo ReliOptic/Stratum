@@ -7,8 +7,6 @@ from typing import Any
 
 from contracts.generated.python.models import (
     CadOp,
-    CadOpType,
-    CadPlacement,
     CausalEdge,
     CausalKind,
     Comparator,
@@ -22,6 +20,7 @@ from contracts.generated.python.models import (
     Target,
 )
 from stratum_api.cad_adapter import compile_and_simulate_spec
+from stratum_cad import vocabulary as cad_vocabulary
 from stratum_api.config import AppConfig
 from stratum_api.fetcher import FetchedPageBundle
 from stratum_api.gemini_client import (
@@ -30,36 +29,14 @@ from stratum_api.gemini_client import (
     extract_json_object,
     extract_usage_tokens,
 )
+from stratum_api.v0_parse import parse_spec_with_repair, repair_cad_with_model
 from stratum_api.v0_agent import (
     V0_SYSTEM_PROMPT,
     EventEmitter,
-    _fallback_default_parts,
     build_retrieved_sources,
     enforce_evidence_discipline,
     run_blind_deep_verify,
 )
-
-
-def _repair_part_spacings(spec: EngineeringSpec) -> EngineeringSpec:
-    """Deterministic spacing repair separating non-enclosure parts along X to clear overlap."""
-    offset_x = -24.0
-    zero_place = CadPlacement(x=0.0, y=0.0, z=0.0, rx=0.0, ry=0.0, rz=0.0)
-    for idx, part in enumerate(spec.parts):
-        is_enc = any(r.value == "enclosure" for r in part.roles)
-        if is_enc:
-            part.cad_ops = [
-                CadOp(op=CadOpType.box, params={"x_mm": 120.0, "y_mm": 80.0, "z_mm": 45.0}, placement=zero_place),
-                CadOp(op=CadOpType.shell, params={"wall_mm": 2.0}, placement=zero_place),
-            ]
-        else:
-            part.cad_ops = [
-                CadOp(
-                    op=CadOpType.box,
-                    params={"x_mm": 14.0, "y_mm": 16.0, "z_mm": 8.0},
-                    placement=CadPlacement(x=offset_x + idx * 18.0, y=0.0, z=0.0, rx=0.0, ry=0.0, rz=0.0),
-                )
-            ]
-    return spec
 
 
 def run_v0_pipeline(
@@ -78,7 +55,7 @@ def run_v0_pipeline(
     prompt_blocks: list[dict[str, Any]] = [
         {
             "type": "text",
-            "text": f"{V0_SYSTEM_PROMPT}\n\nURL: {bundle.final_url}\n{bundle.parsed.combined_text()}\nNotes: {user_notes or ''}",
+            "text": f"{V0_SYSTEM_PROMPT}\n\n{cad_vocabulary()}\n\nURL: {bundle.final_url}\n{bundle.parsed.combined_text()}\nNotes: {user_notes or ''}",
         }
     ]
     for img in bundle.images[:8]:
@@ -97,18 +74,13 @@ def run_v0_pipeline(
     )
     in_tok, out_tok = extract_usage_tokens(inter)
     sources = build_retrieved_sources(run_id, bundle, inter)
-    try:
-        raw_spec = extract_json_object(extract_interaction_text(inter))
-        raw_spec["run_id"] = run_id
-        raw_spec["revision"] = 0
-        raw_spec["sources"] = [s.model_dump(mode="json") for s in sources]
-        spec = EngineeringSpec.model_validate(raw_spec)
-    except Exception:  # noqa: BLE001
-        fb = _fallback_default_parts(sources, bundle.parsed.title)
-        fb["run_id"] = run_id
-        fb["revision"] = 0
-        fb["sources"] = [s.model_dump(mode="json") for s in sources]
-        spec = EngineeringSpec.model_validate(fb)
+    schema_hint = f"{V0_SYSTEM_PROMPT}\n\n{cad_vocabulary()}"
+    spec, r_in, r_out = parse_spec_with_repair(
+        extract_interaction_text(inter), run_id, sources,
+        client=client, model_name=model_name, schema_hint=schema_hint, emit=emit, on_backoff=_on_backoff,
+    )
+    in_tok += r_in
+    out_tok += r_out
 
     valid_ids = {s.source_id for s in sources}
     spec = enforce_evidence_discipline(spec, valid_ids, emit)
@@ -118,9 +90,14 @@ def run_v0_pipeline(
 
     try:
         comp, c_manifest, c_metrics, cad_sim, c_sim = compile_and_simulate_spec(spec)
-    except Exception as exc:  # noqa: BLE001
-        emit("cad", "warn", f"CAD check failed ({exc}); running 1 bounded repair round", None, {})
-        spec = _repair_part_spacings(spec)
+    except Exception as exc:  # noqa: BLE001 - one model-driven repair, then fail honestly
+        spec, f_in, f_out = repair_cad_with_model(
+            spec, str(exc), sources, client=client, model_name=model_name,
+            schema_hint=f"{V0_SYSTEM_PROMPT}\n\n{cad_vocabulary()}", emit=emit, on_backoff=_on_backoff,
+        )
+        in_tok += f_in
+        out_tok += f_out
+        spec = enforce_evidence_discipline(spec, valid_ids, emit)
         comp, c_manifest, c_metrics, cad_sim, c_sim = compile_and_simulate_spec(spec)
     return spec, comp.glb_bytes, comp.step_bytes, c_manifest, c_metrics, c_sim, cad_sim.csv_text, in_tok, out_tok
 

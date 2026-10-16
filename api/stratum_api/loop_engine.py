@@ -87,17 +87,17 @@ def _apply_revision_changes(spec: EngineeringSpec) -> list[tuple[str, str]]:
             for pr in part.parameters:
                 if pr.unit in ("g", "mm", "mm2") and isinstance(pr.value, (int, float)):
                     pr.value = round(float(pr.value) * 1.15, 2)
-            actions.append((part.part_id, f"Upgrade spreader material {old_mat} -> {new_mat} and thermal mass"))
+            actions.append((part.part_id, f"[heuristic] Upgrade spreader material {old_mat} -> {new_mat} and thermal mass"))
         elif "heat_source" in roles:
             for pr in part.parameters:
                 if pr.unit == "W" and isinstance(pr.value, (int, float)):
                     old_w = float(pr.value)
                     pr.value = round(old_w * 0.88, 2)
-                    actions.append((part.part_id, f"Reduce stage dissipation {old_w} -> {pr.value} W"))
+                    actions.append((part.part_id, f"[heuristic] Reduce stage dissipation {old_w} -> {pr.value} W"))
     if not actions and spec.parts:
         p0 = spec.parts[0]
         p0.material = "aluminum_6061"
-        actions.append((p0.part_id, "Upgrade material to aluminum_6061"))
+        actions.append((p0.part_id, "[heuristic] Upgrade material to aluminum_6061"))
     return actions
 
 
@@ -136,6 +136,7 @@ def run_revision_pass(
     new_spec.revision = revision
     new_spec.base_revision = BaseRevision(prev_spec.revision)
     actions = _apply_revision_changes(new_spec)
+    emit("revision", "info", "Changes in this round come from fixed engineering heuristics, not from the model; predictions are still scored by the simulator", None, {"heuristic": True})
     try:
         comp, c_manifest, c_metrics, cad_sim, c_sim = compile_and_simulate_spec(new_spec)
     except Exception as exc:  # noqa: BLE001
