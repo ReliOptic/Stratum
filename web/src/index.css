@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0B0D12;
+  --color-panel: #11151C;
+  --color-hairline: #232A35;
+  --color-text: #D8DEE9;
+  --color-dim: #7B8594;
+  --color-amber: #F2A33A;
+  --color-cyan: #4CC9F0;
+  --color-olive: #B8A44C;
+  --color-danger: #E5484D;
+  --color-confirm: #3FB68B;
+
+  --color-background: #0B0D12;
+  --color-foreground: #D8DEE9;
+  --color-card: #11151C;
+  --color-card-foreground: #D8DEE9;
+  --color-popover: #11151C;
+  --color-popover-foreground: #D8DEE9;
+  --color-primary: #F2A33A;
+  --color-primary-foreground: #0B0D12;
+  --color-secondary: #232A35;
+  --color-secondary-foreground: #D8DEE9;
+  --color-muted: #11151C;
+  --color-muted-foreground: #7B8594;
+  --color-accent: #232A35;
+  --color-accent-foreground: #D8DEE9;
+  --color-destructive: #E5484D;
+  --color-destructive-foreground: #D8DEE9;
+  --color-border: #232A35;
+  --color-input: #232A35;
+  --color-ring: #F2A33A;
+
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-hairline);
+  }
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+  }
+}
