@@ -113,6 +113,7 @@ export type EventLevel = "info" | "warn" | "error";
  * via the `definition` "RunStatus".
  */
 export type RunStatus =
+  | "V0_RUNNING"
   | "V0_READY"
   | "PRESETS_READY"
   | "OBJECTIVE_CONFIRMED"

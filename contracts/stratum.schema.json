@@ -229,6 +229,7 @@
       "title": "RunStatus",
       "type": "string",
       "enum": [
+        "V0_RUNNING",
         "V0_READY",
         "PRESETS_READY",
         "OBJECTIVE_CONFIRMED",

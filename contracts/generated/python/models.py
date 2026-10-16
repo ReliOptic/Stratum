@@ -146,6 +146,7 @@ class EventLevel(StrEnum):
 
 
 class RunStatus(StrEnum):
+    V0_RUNNING = 'V0_RUNNING'
     V0_READY = 'V0_READY'
     PRESETS_READY = 'PRESETS_READY'
     OBJECTIVE_CONFIRMED = 'OBJECTIVE_CONFIRMED'

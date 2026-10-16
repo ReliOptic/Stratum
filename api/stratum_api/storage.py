@@ -106,9 +106,11 @@ class CloudStateRepository(InMemoryStateRepository):
         self._config = config
         self._fs_client: Any | None = None
         self._gcs_client: Any | None = None
+        self._fs_disabled: bool = False
+        self._gcs_disabled: bool = False
 
     def _bucket(self) -> Any | None:
-        if not self._config.k_service and self._config.gcp_project == "stratum-dev":
+        if self._gcs_disabled or (not self._config.k_service and self._config.gcp_project == "stratum-dev"):
             return None
         try:
             if self._gcs_client is None:
@@ -117,11 +119,12 @@ class CloudStateRepository(InMemoryStateRepository):
                 self._gcs_client = storage.Client(project=self._config.gcp_project)
             return self._gcs_client.bucket(self._config.artifact_bucket)
         except Exception as exc:  # noqa: BLE001
+            self._gcs_disabled = True
             logger.log_event("gcs_unavailable", stage="storage", level="WARNING", message=str(exc))
             return None
 
     def _firestore(self) -> Any | None:
-        if self._config.state_backend != "firestore":
+        if self._fs_disabled or self._config.state_backend != "firestore":
             return None
         if not self._config.k_service and self._config.gcp_project == "stratum-dev":
             return None
@@ -132,6 +135,7 @@ class CloudStateRepository(InMemoryStateRepository):
                 self._fs_client = firestore.Client(project=self._config.gcp_project)
             return self._fs_client
         except Exception as exc:  # noqa: BLE001
+            self._fs_disabled = True
             logger.log_event("firestore_unavailable", stage="storage", level="WARNING", message=str(exc))
             return None
 
@@ -143,6 +147,7 @@ class CloudStateRepository(InMemoryStateRepository):
                 fs.collection("stratum_runs").document(run_id).collection("docs").document(key).set(data)
                 return
             except Exception as exc:  # noqa: BLE001
+                self._fs_disabled = True
                 logger.log_event("firestore_write_err", run_id=run_id, stage="storage", level="WARNING", message=str(exc))
         bucket = self._bucket()
         if bucket is not None:
@@ -150,6 +155,7 @@ class CloudStateRepository(InMemoryStateRepository):
                 blob = bucket.blob(f"runs/{run_id}/state/{key}.json")
                 blob.upload_from_string(json.dumps(data), content_type="application/json")
             except Exception as exc:  # noqa: BLE001
+                self._gcs_disabled = True
                 logger.log_event("gcs_doc_write_err", run_id=run_id, stage="storage", level="WARNING", message=str(exc))
 
     def get_doc(self, run_id: str, key: str) -> dict[str, Any] | None:
@@ -165,7 +171,7 @@ class CloudStateRepository(InMemoryStateRepository):
                     super().save_doc(run_id, key, data)
                     return data
             except Exception:  # noqa: BLE001
-                pass
+                self._fs_disabled = True
         bucket = self._bucket()
         if bucket is not None:
             try:
@@ -175,7 +181,7 @@ class CloudStateRepository(InMemoryStateRepository):
                     super().save_doc(run_id, key, data)
                     return data
             except Exception:  # noqa: BLE001
-                pass
+                self._gcs_disabled = True
         return None
 
     def save_blob(
@@ -187,6 +193,7 @@ class CloudStateRepository(InMemoryStateRepository):
             try:
                 bucket.blob(uri).upload_from_string(data, content_type=content_type)
             except Exception as exc:  # noqa: BLE001
+                self._gcs_disabled = True
                 logger.log_event("gcs_blob_write_err", run_id=run_id, stage="storage", level="WARNING", message=str(exc))
         return uri
 
@@ -203,7 +210,7 @@ class CloudStateRepository(InMemoryStateRepository):
                     super().save_blob(run_id, rel_path, raw)
                     return raw
             except Exception:  # noqa: BLE001
-                pass
+                self._gcs_disabled = True
         return None
 
 

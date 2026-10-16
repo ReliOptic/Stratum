@@ -41,8 +41,8 @@ def build_core_router() -> APIRouter:
     def create_run(request: Request, body: dict[str, Any] = Body(...)) -> JSONResponse:
         state = request.app.state
         run_id = f"run_{uuid.uuid4().hex[:10]}"
-        client = state.genai_client or build_genai_client(state.config)
-        resolver = getattr(state, "url_resolver", default_resolve_host)
+        client = getattr(state, "genai_client", None) or build_genai_client(state.config)
+        resolver = getattr(state, "url_resolver", None) or default_resolve_host
         http_client = getattr(state, "http_client", None)
         run_dict = execute_new_run(
             run_id=run_id,

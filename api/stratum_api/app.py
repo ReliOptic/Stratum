@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from stratum_api.config import AppConfig, load_config, validate_config
 from stratum_api.errors import register_error_handlers
+from stratum_api.fetcher import default_resolve_host
 from stratum_api.logging_utils import get_logger
 from stratum_api.probes import (
     ProbeRateLimiter,
@@ -93,7 +94,7 @@ def create_app(
     application.state.rate_limiter = limiter
     application.state.genai_client = genai_client
     application.state.repo = state_repo
-    application.state.url_resolver = url_resolver
+    application.state.url_resolver = url_resolver or default_resolve_host
     application.state.http_client = http_client
     cad_ok, cad_reason = check_cad_engine()
     application.state.cad_ok = cad_ok

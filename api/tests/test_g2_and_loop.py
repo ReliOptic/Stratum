@@ -219,3 +219,30 @@ def test_end_to_end_closed_loop_v0_v1_bridge_v2() -> None:
     assert r_v2.json()["revision"] == 2
     assert client.get(f"/api/runs/{run_id}/stats").status_code == 200
     assert client.get("/api/benchmarks").status_code == 200
+
+
+def test_create_app_default_resolver_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify create_app() with default url_resolver=None uses default_resolve_host via socket.getaddrinfo."""
+    import socket
+
+    resolved_hosts: list[str] = []
+
+    def _fake_getaddrinfo(host: str, port: Any, proto: int = 0) -> list[Any]:
+        _ = (port, proto)
+        resolved_hosts.append(host)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _fake_getaddrinfo)
+    cfg = load_config({})
+    fake_genai = SimpleNamespace(interactions=_FakeLoopInteractions())
+    fake_http = _FakeHttpClient(_make_sample_png())
+    app = create_app(cfg, genai_client=fake_genai, http_client=fake_http)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/runs",
+        json={"url": "https://www.anker.com/products/a1665-maggo-10000mah-power-bank"},
+    )
+    assert resp.status_code == 201
+    assert "www.anker.com" in resolved_hosts
+

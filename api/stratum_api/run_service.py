@@ -51,7 +51,7 @@ def make_emitter(run_id: str, repo: InMemoryStateRepository, revision: int | Non
     def _emit(
         stage: str, level: str, message: str, part_id: str | None = None, data: dict[str, Any] | None = None
     ) -> None:
-        seq = len(repo.list_events(run_id))
+        seq = len(repo.list_events(run_id)) + 1
         st_enum = _STAGE_MAP.get(stage, EventStage.v0)
         rev_obj = Revision1(revision) if revision is not None else None
         ev = RunEvent(

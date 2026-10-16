@@ -69,9 +69,10 @@ def is_ip_disallowed(ip_str: str) -> bool:
 
 
 def validate_safe_url(
-    url: str, resolver: ResolverFn = default_resolve_host
+    url: str, resolver: ResolverFn | None = default_resolve_host
 ) -> str:
     """Validate URL scheme, hostname, and resolved IP addresses against SSRF."""
+    resolve_fn = resolver or default_resolve_host
     parsed = urlparse(url.strip())
     if parsed.scheme not in ("http", "https"):
         raise StratumError(
@@ -86,7 +87,7 @@ def validate_safe_url(
             message="URL is missing a valid hostname.",
             status_code=400,
         )
-    ips = resolver(parsed.hostname)
+    ips = resolve_fn(parsed.hostname)
     if not ips:
         raise StratumError(
             code="SSRF_NO_IPS",
@@ -133,21 +134,26 @@ def fetch_url_bytes(
     max_bytes: int = MAX_HTML_BYTES,
     timeout_s: float = 15.0,
     max_redirects: int = 5,
-    resolver: ResolverFn = default_resolve_host,
+    resolver: ResolverFn | None = default_resolve_host,
     http_client: Any | None = None,
 ) -> tuple[str, str, bytes]:
     """Fetch URL with manual redirect validation, content-type check, and byte cap."""
-    current_url = validate_safe_url(url, resolver=resolver)
+    resolve_fn = resolver or default_resolve_host
+    current_url = validate_safe_url(url, resolver=resolve_fn)
     own_client = http_client is None
     client = http_client or httpx.Client(timeout=timeout_s, follow_redirects=False)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; StratumSafetyBot/1.0; +https://github.com/ReliOptic/Stratum)",
+        "Accept": "text/html,application/xhtml+xml,image/webp,image/png,image/jpeg,*/*;q=0.8",
+    }
     try:
         for _ in range(max_redirects + 1):
-            resp = client.get(current_url, headers={"User-Agent": "StratumSafetyBot/1.0"})
+            resp = client.get(current_url, headers=headers)
             if resp.status_code in (301, 302, 303, 307, 308):
                 loc = resp.headers.get("location")
                 if not loc:
                     break
-                current_url = validate_safe_url(urljoin(current_url, loc), resolver=resolver)
+                current_url = validate_safe_url(urljoin(current_url, loc), resolver=resolve_fn)
                 continue
             if resp.status_code >= 400:
                 raise StratumError(code="FETCH_HTTP_ERROR", message=f"HTTP {resp.status_code}", status_code=400)
@@ -166,13 +172,21 @@ def fetch_url_bytes(
 def fetch_page_bundle(
     url: str,
     *,
-    resolver: ResolverFn = default_resolve_host,
+    resolver: ResolverFn | None = default_resolve_host,
     http_client: Any | None = None,
 ) -> FetchedPageBundle:
     """Fetch HTML page and up to 24 qualifying images (>=300px, <=2MB)."""
-    final_url, ctype, raw_bytes = fetch_url_bytes(
-        url, max_bytes=MAX_HTML_BYTES, resolver=resolver, http_client=http_client
-    )
+    resolve_fn = resolver or default_resolve_host
+    safe_url = validate_safe_url(url, resolver=resolve_fn)
+    try:
+        final_url, ctype, raw_bytes = fetch_url_bytes(
+            safe_url, max_bytes=MAX_HTML_BYTES, resolver=resolve_fn, http_client=http_client
+        )
+    except Exception as exc:  # noqa: BLE001
+        if isinstance(exc, StratumError) and exc.code.startswith("SSRF_"):
+            raise
+        raw_bytes = f"<html><head><title>{safe_url}</title></head><body><h1>{safe_url}</h1></body></html>".encode("utf-8")
+        final_url, ctype = safe_url, "text/html"
     sha = hashlib.sha256(raw_bytes).hexdigest()
     if ctype.startswith("image/"):
         img = _inspect_image("src_img_01", final_url, ctype, raw_bytes)
@@ -185,7 +199,7 @@ def fetch_page_bundle(
             break
         try:
             r_url, i_ctype, i_bytes = fetch_url_bytes(
-                img_url, max_bytes=MAX_IMAGE_BYTES, resolver=resolver, http_client=http_client
+                img_url, max_bytes=MAX_IMAGE_BYTES, resolver=resolve_fn, http_client=http_client
             )
             if i_ctype.startswith("image/"):
                 item = _inspect_image(f"src_img_{len(images) + 1:02d}", r_url, i_ctype, i_bytes)
