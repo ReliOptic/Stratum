@@ -33,9 +33,9 @@ export function LoopStrip({
     <div
       data-testid="loop-strip"
       data-matlab-command={matlabCommand ?? "none"}
-      className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-2"
+      className="flex flex-wrap items-center justify-between gap-2 pb-1"
     >
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1" data-testid="revision-tabs">
           {revisionTabs.map((tab) => (
             <Button
@@ -54,10 +54,10 @@ export function LoopStrip({
           <div
             key={node.revision}
             data-testid={`loop-node-V${node.revision}`}
-            className="flex items-center gap-1.5 font-mono text-xs"
+            className="flex items-center gap-1.5 font-mono text-xs tabular-nums"
           >
             {idx > 0 && <span className="text-dim">→</span>}
-            <div className="flex items-center gap-1.5 rounded-sm border border-hairline bg-bg px-2 py-1">
+            <div className="flex items-center gap-1.5 rounded-md bg-bg px-2.5 py-1">
               <span className="font-semibold text-amber">{node.label}</span>
               <span className="text-confirm">✓{node.confirmed_count}</span>
               <span className="text-danger">✗{node.refuted_count}</span>
@@ -94,7 +94,7 @@ export function LoopStrip({
       </div>
 
       {latestRevision >= 1 && (
-        <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           {matlabWaitingExpiry && (
             <Badge
               variant="amber"
@@ -121,7 +121,7 @@ export function LoopStrip({
           >
             Download ZIP
           </Button>
-          <span className="hidden text-dim xl:inline">
+          <span className="hidden font-sans text-dim xl:inline">
             Runs in MATLAB/Simulink — execution is performed by you
           </span>
           <Button

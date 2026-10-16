@@ -21,15 +21,15 @@ export function OnboardingHeader({
       data-testid="onboarding-header"
       data-docked={docked ? "true" : "false"}
       className={cn(
-        "pointer-events-auto z-20 flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-panel/90 px-4 py-2.5 transition-all duration-500",
-        docked ? "w-full" : "mx-auto mt-6 w-11/12 max-w-3xl rounded-sm border",
+        "pointer-events-auto z-30 flex flex-wrap items-center justify-between gap-2 px-5 py-3 transition-colors duration-200 ease-out",
+        docked ? "w-full bg-panel/90" : "fixed top-0 left-0 w-full bg-transparent",
       )}
     >
-      <div className="flex flex-wrap items-baseline gap-2">
-        <h1 className="font-mono text-base font-bold tracking-wider text-amber uppercase">
-          Stratum
-        </h1>
-        <span className="font-mono text-xs text-dim">
+      <div className="flex flex-wrap items-baseline gap-2.5">
+        <span data-saira="true" className="text-sm font-semibold text-amber">
+          STRATUM
+        </span>
+        <span className="font-sans text-xs text-dim">
           Total Elements layer for Baltam
         </span>
       </div>

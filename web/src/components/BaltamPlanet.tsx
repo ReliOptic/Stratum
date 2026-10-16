@@ -2,10 +2,18 @@ import * as React from "react";
 
 const ASCII_RAMP = " .:-=+*#%@";
 const DISPERSION_GLYPHS = "·:+#*";
-const GRID_COLS = 44;
-const GRID_ROWS = 18;
+const CIPHER_GLYPHS = "01#$%*+;:~^=";
+const GRID_COLS = 54;
+const GRID_ROWS = 22;
 const TARGET_FPS = 60;
 const FRAME_MS = 1000 / TARGET_FPS;
+
+const WHISPER_CORNERS = [
+  { id: "tl", pos: "top-2 left-2", text: "STRATA 03" },
+  { id: "tr", pos: "top-2 right-2", text: "EVIDENCE 0" },
+  { id: "bl", pos: "bottom-2 left-2", text: "LOOP V0" },
+  { id: "br", pos: "bottom-2 right-2", text: "AUDIT —" },
+] as const;
 
 export interface AsciiBandLine {
   readonly rowIndex: number;
@@ -29,6 +37,8 @@ function samplePlanetCell(
   sinA: number,
   cursorNx: number,
   cursorNy: number,
+  decodeProgress: number,
+  sunriseProgress: number,
 ): { readonly char: string; readonly kind: "ocean" | "strata" | "ochre" | "void" } {
   const rawNx = ((c - GRID_COLS / 2) / (GRID_COLS / 2)) * 1.95;
   const rawNy = ((r - GRID_ROWS / 2) / (GRID_ROWS / 2)) * 1.12;
@@ -50,16 +60,27 @@ function samplePlanetCell(
     return { char: distSq < 0.11 ? "·" : " ", kind: "void" };
   }
 
+  if (decodeProgress < 1) {
+    const cellJitter = ((r * 17 + c * 31) % 37) / 37;
+    const settleThreshold = 0.12 + 0.78 * ((c / GRID_COLS) * 0.65 + cellJitter * 0.35);
+    if (decodeProgress < settleThreshold) {
+      const idx = Math.floor(decodeProgress * 40 + r * 7 + c * 13) % CIPHER_GLYPHS.length;
+      return { char: CIPHER_GLYPHS[idx] ?? "#", kind: "ochre" };
+    }
+  }
+
   const nz = Math.sqrt(Math.max(0, 1.0 - rSq));
   const rx = nx * cosA + nz * sinA;
   const rz = -nx * sinA + nz * cosA;
   const terrain = sampleStrataNoise(rx, ny, rz);
-  const light = Math.max(0.08, nx * -0.45 + ny * -0.3 + nz * 0.84);
+  const sweepX = -1.0 + sunriseProgress * 2.2;
+  const rimBoost = sunriseProgress > 0 && sunriseProgress < 1 && Math.abs(nx - sweepX) < 0.16 ? 0.38 : 0;
+  const light = Math.max(0.08, nx * -0.45 + ny * -0.3 + nz * 0.84 + rimBoost);
   const shade = Math.min(
     ASCII_RAMP.length - 1,
     Math.max(1, Math.floor((light * 0.75 + (terrain + 1) * 0.18) * ASCII_RAMP.length)),
   );
-  const kind = terrain < -0.22 ? "ocean" : Math.abs(terrain) < 0.2 ? "strata" : "ochre";
+  const kind = rimBoost > 0 ? "ochre" : terrain < -0.22 ? "ocean" : Math.abs(terrain) < 0.2 ? "strata" : "ochre";
   return { char: ASCII_RAMP[shade] ?? ".", kind };
 }
 
@@ -67,6 +88,8 @@ export function renderAsciiPlanetFrame(
   angleRad: number,
   cursorNx: number = -10,
   cursorNy: number = -10,
+  decodeProgress: number = 1,
+  sunriseProgress: number = 1,
 ): readonly AsciiBandLine[] {
   const lines: AsciiBandLine[] = [];
   const cosA = Math.cos(angleRad);
@@ -77,13 +100,13 @@ export function renderAsciiPlanetFrame(
     let oceanHits = 0;
     let strataHits = 0;
     for (let c = 0; c < GRID_COLS; c += 1) {
-      const cell = samplePlanetCell(r, c, cosA, sinA, cursorNx, cursorNy);
+      const cell = samplePlanetCell(r, c, cosA, sinA, cursorNx, cursorNy, decodeProgress, sunriseProgress);
       rowChars += cell.char;
       if (cell.kind === "ocean") oceanHits += 1;
       else if (cell.kind === "strata") strataHits += 1;
     }
     const bandKind: AsciiBandLine["bandKind"] =
-      oceanHits > 6 ? "ocean" : strataHits > 5 ? "strata" : "ochre";
+      oceanHits > 7 ? "ocean" : strataHits > 6 ? "strata" : "ochre";
     lines.push({ rowIndex: r, text: rowChars, bandKind });
   }
   return lines;
@@ -91,23 +114,30 @@ export function renderAsciiPlanetFrame(
 
 export interface BaltamPlanetProps {
   readonly paused?: boolean;
+  readonly decodeProgress?: number;
+  readonly sunriseProgress?: number;
+  readonly scanlineProgress?: number | null;
+  readonly whisperElapsedMs?: number;
 }
 
 const BAND_CLASS_MAP: Readonly<Record<AsciiBandLine["bandKind"], string>> = {
   ochre: "text-amber/90",
-  strata: "text-olive",
-  ocean: "text-dim",
+  strata: "text-olive/90",
+  ocean: "text-dim/80",
 };
 
-export function BaltamPlanet({ paused = false }: BaltamPlanetProps): React.JSX.Element {
+export function BaltamPlanet({
+  paused = false,
+  decodeProgress = 1,
+  sunriseProgress = 1,
+  scanlineProgress = null,
+  whisperElapsedMs = 1000,
+}: BaltamPlanetProps): React.JSX.Element {
   const [angle, setAngle] = React.useState<number>(0.4);
   const [docHidden, setDocHidden] = React.useState<boolean>(
     () => typeof document !== "undefined" && document.hidden,
   );
-  const [cursor, setCursor] = React.useState<{ readonly x: number; readonly y: number }>({
-    x: -10,
-    y: -10,
-  });
+  const [cursor, setCursor] = React.useState<{ readonly x: number; readonly y: number }>({ x: -10, y: -10 });
   const isPaused = paused || docHidden;
 
   React.useEffect(() => {
@@ -126,7 +156,7 @@ export function BaltamPlanet({ paused = false }: BaltamPlanetProps): React.JSX.E
       if (elapsed >= FRAME_MS) {
         const dt = Math.min(0.1, elapsed / 1000);
         lastStep = now - (elapsed % FRAME_MS);
-        setAngle((prev) => (prev + dt * 0.65) % (Math.PI * 2));
+        setAngle((prev) => (prev + dt * 0.55) % (Math.PI * 2));
       }
       frameId = window.requestAnimationFrame(step);
     };
@@ -144,22 +174,36 @@ export function BaltamPlanet({ paused = false }: BaltamPlanetProps): React.JSX.E
   };
 
   const lines = React.useMemo(
-    () => renderAsciiPlanetFrame(angle, cursor.x, cursor.y),
-    [angle, cursor.x, cursor.y],
+    () => renderAsciiPlanetFrame(angle, cursor.x, cursor.y, decodeProgress, sunriseProgress),
+    [angle, cursor.x, cursor.y, decodeProgress, sunriseProgress],
   );
-  const cursorActive = cursor.x > -5 && cursor.y > -5;
+  const charsVisible = Math.max(0, Math.floor(whisperElapsedMs / 18));
 
   return (
     <div
       data-testid="baltam-planet"
       data-fps-target={TARGET_FPS}
       data-paused={isPaused ? "true" : "false"}
-      data-dispersed={cursorActive ? "true" : "false"}
+      data-dispersed={cursor.x > -5 && cursor.y > -5 ? "true" : "false"}
+      data-planet-glow="true"
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setCursor({ x: -10, y: -10 })}
-      className="select-none rounded-sm border border-hairline bg-panel/60 px-4 py-2 font-mono text-xs leading-tight tracking-widest"
+      className="pointer-events-auto relative flex select-none flex-col items-center justify-center px-6 py-4 font-mono text-xs leading-tight tracking-widest md:text-sm"
       aria-label="Baltam planetary strata instrument"
     >
+      {WHISPER_CORNERS.map((w) => (
+        <span key={w.id} data-whisper-label="true" data-testid={`planet-whisper-${w.id}`} className={`pointer-events-none absolute ${w.pos}`}>
+          {w.text.slice(0, charsVisible)}
+        </span>
+      ))}
+      {scanlineProgress !== null && scanlineProgress >= 0 && scanlineProgress <= 1 && (
+        <div
+          data-testid="planet-scanline"
+          data-scanline="true"
+          className="pointer-events-none absolute inset-x-4 h-px"
+          style={{ top: `${(scanlineProgress * 100).toFixed(1)}%` }}
+        />
+      )}
       {lines.map((line) => (
         <pre key={line.rowIndex} data-band={line.bandKind} className={BAND_CLASS_MAP[line.bandKind]}>
           {line.text}
@@ -168,4 +212,3 @@ export function BaltamPlanet({ paused = false }: BaltamPlanetProps): React.JSX.E
     </div>
   );
 }
-

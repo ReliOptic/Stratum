@@ -80,12 +80,8 @@ async function registerLoopRoutes(page: Page, tracker: MockTracker): Promise<voi
     const p2 = { ...p1, pass_no: 2, suspicious: true, suspicious_reason: "Step gain exceeds linear RC bound", fitted_adjustment: true };
     return r.fulfill(jsonRoute([p1, p2]));
   });
-  await page.route("**/api/runs/run-widget-a-001/sandbox*", (r) =>
-    r.fulfill(jsonRoute({ revision: 1, agrees_with_metrics: true, notes: ["watertight"] })),
-  );
-  await page.route("**/api/runs/run-widget-a-001/benchmarks*", (r) =>
-    r.fulfill(jsonRoute([{ input_key: "widget-a", runs: [] }])),
-  );
+  await page.route("**/api/runs/run-widget-a-001/sandbox*", (r) => r.fulfill(jsonRoute({ revision: 1, agrees_with_metrics: true, notes: ["watertight"] })));
+  await page.route("**/api/runs/run-widget-a-001/benchmarks*", (r) => r.fulfill(jsonRoute([{ input_key: "widget-a", runs: [] }])));
 }
 
 async function registerActionRoutes(page: Page, tracker: MockTracker): Promise<void> {
@@ -93,14 +89,7 @@ async function registerActionRoutes(page: Page, tracker: MockTracker): Promise<v
   await page.route("**/api/runs/run-widget-a-001/objective", (r) => {
     tracker.objectiveCalls += 1;
     const req = JSON.parse(r.request().postData() ?? "{}") as { base_revision?: number; text?: string };
-    return r.fulfill(
-      jsonRoute({
-        text: req.text ?? "Reduce steady-state temperature",
-        targets: [{ metric_id: "peak_temp_C", comparator: "lte", threshold: 58.0, unit: "C" }],
-        base_revision: req.base_revision ?? 0,
-        objective_hash: `hash-widget-a-r${req.base_revision ?? 0}-${tracker.objectiveCalls}`,
-      }),
-    );
+    return r.fulfill(jsonRoute({ text: req.text ?? "Reduce steady-state temperature", targets: [{ metric_id: "peak_temp_C", comparator: "lte", threshold: 58.0, unit: "C" }], base_revision: req.base_revision ?? 0, objective_hash: `hash-widget-a-r${req.base_revision ?? 0}-${tracker.objectiveCalls}` }));
   });
   await page.route("**/api/runs/run-widget-a-001/objective/confirm", (r) => {
     tracker.confirmCalls += 1;
@@ -109,24 +98,55 @@ async function registerActionRoutes(page: Page, tracker: MockTracker): Promise<v
     return r.fulfill(jsonRoute({ token: `tok-${tracker.confirmCalls}`, expires_at: "2026-10-16T13:00:00Z" }));
   });
   await page.route("**/api/runs/run-widget-a-001/revisions", (r) => r.fulfill(jsonRoute({ revision: 1, status: "V1_READY" })));
-  await page.route("**/api/runs/run-widget-a-001/matlab-link*", (r) =>
-    r.fulfill(jsonRoute({ command: "stratum_Bridge_V0_V1", expires_at: "2026-10-16T12:45:00Z" })),
-  );
+  await page.route("**/api/runs/run-widget-a-001/matlab-link*", (r) => r.fulfill(jsonRoute({ command: "stratum_Bridge_V0_V1", expires_at: "2026-10-16T12:45:00Z" })));
   await page.route("**/api/runs/run-widget-a-001/external-results", (r) => {
     tracker.imported = true;
     return r.fulfill(jsonRoute({ status: "EXTERNAL_RESULTS_IMPORTED", draft_objective: "Tighten storage-cell margin for V2", base_revision: 1, external_sim: extSim }));
   });
 }
 
-test("G3-UI closed loop: 2-step objective review/confirm, matrix, temp chart, MATLAB link, external import -> V2", async ({
-  page,
-}, testInfo) => {
+test("Director's Brief: H1 thesis text, 6.4s title sequence frames, reduced motion, and keypress skip", async ({ page }, testInfo) => {
+  await page.goto("/");
+  await expect(page.locator("h1")).toHaveText("Can Gemini 4 Argon make the physical world safer?");
+  if (testInfo.project.name.startsWith("desktop")) {
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: "test-results/title-seq-0.8s.png" });
+    await page.waitForTimeout(1800);
+    await page.screenshot({ path: "test-results/title-seq-2.6s.png" });
+    await page.waitForTimeout(1600);
+    await page.screenshot({ path: "test-results/title-seq-4.2s.png" });
+    await page.waitForTimeout(2800);
+    await expect(page.getByTestId("hero-title-sequence")).toHaveAttribute("data-sequence-state", "docked");
+    await page.screenshot({ path: "test-results/title-seq-7.0s-docked.png" });
+
+    await page.evaluate(() => window.sessionStorage.clear());
+    await page.reload();
+    await expect(page.getByTestId("hero-title-sequence")).toHaveAttribute("data-sequence-state", "playing");
+    await page.keyboard.press("Space");
+    await expect(page.getByTestId("hero-title-sequence")).toHaveAttribute("data-sequence-state", "docked");
+    await page.screenshot({ path: "test-results/title-seq-skip.png" });
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.evaluate(() => window.sessionStorage.clear());
+    await page.reload();
+    await expect(page.getByTestId("hero-title-sequence")).toHaveAttribute("data-sequence-state", "docked");
+    await page.screenshot({ path: "test-results/title-seq-reduced-motion.png" });
+  } else {
+    await page.keyboard.press("Space");
+    await expect(page.getByTestId("hero-title-sequence")).toHaveAttribute("data-sequence-state", "docked");
+  }
+});
+
+test("G3-UI closed loop: 2-step objective review/confirm, matrix, temp chart, MATLAB link, external import -> V2", async ({ page }, testInfo) => {
   const tracker: MockTracker = { imported: false, objectiveCalls: 0, confirmCalls: 0, lastConfirmBody: {} };
   await registerCoreRoutes(page);
   await registerLoopRoutes(page, tracker);
   await registerActionRoutes(page, tracker);
 
   await page.goto("/");
+  await expect(page.getByTestId("hero-title-sequence")).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(page.getByTestId("hero-title-sequence")).toHaveAttribute("data-sequence-state", "docked");
   await expect(page.getByTestId("baltam-planet")).toHaveAttribute("data-fps-target", "60");
   await page.getByTestId("product-url-input").fill("https://example.invalid/widget-a");
   await page.getByTestId("reconstruct-button").click();

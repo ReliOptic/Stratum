@@ -57,6 +57,7 @@ export function Viewport3D({
   const parts = manifest?.parts ?? [];
   const nodeMap = React.useMemo(() => mapManifestToPartByNode(manifest), [manifest]);
   const centroid = React.useMemo(() => computeAssemblyCentroidMm(parts), [parts]);
+  const isRunning = Boolean(runId) || parts.length > 0;
 
   React.useEffect(() => {
     const targetRunId = runId ?? manifest?.run_id ?? null;
@@ -83,10 +84,18 @@ export function Viewport3D({
       aria-label="3D Engineering Viewport"
       className="relative h-full w-full overflow-hidden bg-bg"
     >
+      {isRunning && (
+        <div data-testid="hud-corner-brackets" className="pointer-events-none absolute inset-3 z-10">
+          <span className="absolute top-0 left-0 h-3 w-3 border-t border-l border-amber/50" />
+          <span className="absolute top-0 right-0 h-3 w-3 border-t border-r border-amber/50" />
+          <span className="absolute bottom-0 left-0 h-3 w-3 border-b border-l border-amber/50" />
+          <span className="absolute right-0 bottom-0 h-3 w-3 border-r border-b border-amber/50" />
+        </div>
+      )}
       {webglAvailable && parts.length > 0 ? (
         <React.Suspense
           fallback={
-            <div className="flex h-full w-full items-center justify-center font-mono text-xs text-dim">
+            <div className="flex h-full w-full items-center justify-center font-mono text-xs text-dim tabular-nums">
               INITIALIZING 3D VIEWPORT · V{activeRevision}
             </div>
           }
@@ -101,18 +110,16 @@ export function Viewport3D({
             glbBuffer={glbBuffer}
           />
         </React.Suspense>
-      ) : (
-        <div className="flex h-full w-full items-center justify-center font-mono text-xs text-dim">
-          {parts.length > 0
-            ? `CAD MANIFEST LOADED · V${activeRevision} (${parts.length} PARTS)`
-            : "AWAITING RECONSTRUCTION MANIFEST"}
+      ) : parts.length > 0 ? (
+        <div className="flex h-full w-full items-center justify-center font-mono text-xs text-dim tabular-nums">
+          CAD MANIFEST LOADED · V{activeRevision} ({parts.length} PARTS)
         </div>
-      )}
+      ) : null}
       {parts.length > 0 && (
-        <div className="pointer-events-auto absolute top-16 left-4 flex flex-col gap-2 rounded-sm border border-hairline bg-panel/90 p-3">
-          <div className="flex items-center justify-between gap-4 font-mono text-xs text-dim">
-            <span>EXPLODED VIEW · V{activeRevision}</span>
-            <span data-testid="explode-percent" className="text-amber">{Math.round(explode * 100)}%</span>
+        <div className="pointer-events-auto absolute top-6 left-6 z-20 flex flex-col gap-2.5 rounded-md bg-panel/90 p-3.5 transition-all duration-200 ease-out">
+          <div className="flex items-center justify-between gap-4 text-xs">
+            <span data-saira="true" className="text-dim">EXPLODED VIEW · V{activeRevision}</span>
+            <span data-testid="explode-percent" className="font-mono text-amber tabular-nums">{Math.round(explode * 100)}%</span>
           </div>
           <input
             data-testid="explode-slider"
@@ -137,14 +144,15 @@ export function Viewport3D({
                   data-testid={`viewport-node-${p.part_id}`}
                   data-glb-node={p.glb_node}
                   data-visual-state={isSelected ? "active-amber" : ghost ? "xray-ghost-15" : "default"}
+                  data-scanline={isSelected ? "true" : undefined}
                   data-offset-mm={`${ox.toFixed(1)},${oy.toFixed(1)},${oz.toFixed(1)}`}
                   onClick={() => onSelectPart(p.part_id)}
                   className={
                     isSelected
-                      ? "rounded-sm border border-amber bg-amber/20 px-2 py-0.5 font-mono text-xs text-amber"
+                      ? "rounded-sm bg-amber/20 px-2.5 py-1 font-mono text-xs text-amber tabular-nums transition-colors duration-150"
                       : ghost
-                        ? "rounded-sm border border-hairline bg-bg/40 px-2 py-0.5 font-mono text-xs text-dim opacity-60 hover:opacity-100"
-                        : "rounded-sm border border-hairline bg-bg px-2 py-0.5 font-mono text-xs text-dim hover:text-text"
+                        ? "rounded-sm bg-bg/40 px-2.5 py-1 font-mono text-xs text-dim opacity-60 transition-opacity duration-150 hover:opacity-100"
+                        : "rounded-sm bg-bg px-2.5 py-1 font-mono text-xs text-dim transition-colors duration-150 hover:text-text"
                   }
                 >
                   {p.part_id}
@@ -153,7 +161,7 @@ export function Viewport3D({
             })}
           </div>
           {edges.length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-1">
+            <div className="flex flex-wrap gap-1.5 pt-1">
               {edges.map((edge, idx) => (
                 <button
                   key={`${edge.from_part}-${edge.to_part}-${idx}`}
@@ -165,7 +173,7 @@ export function Viewport3D({
                   onMouseLeave={() => setHoveredEdge(null)}
                   onFocus={() => setHoveredEdge(edge)}
                   onClick={() => setHoveredEdge(edge)}
-                  className="flex items-center gap-1 rounded-sm border border-hairline bg-bg px-1.5 py-0.5 font-mono text-xs text-dim hover:border-amber"
+                  className="flex items-center gap-1.5 rounded-sm bg-bg px-2 py-1 font-mono text-xs text-dim transition-colors duration-150 hover:text-text"
                 >
                   <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: EDGE_COLOR_HEX[edge.kind] }} />
                   <span>{edge.from_part}→{edge.to_part}</span>
@@ -174,12 +182,12 @@ export function Viewport3D({
             </div>
           )}
           {hoveredEdge && (
-            <div data-testid="spline-tooltip" className="rounded-sm border border-amber/50 bg-bg p-2 font-mono text-xs text-text">
+            <div data-testid="spline-tooltip" className="rounded-sm bg-bg p-2.5 font-sans text-xs text-text">
               <div className="flex items-center gap-2">
                 <Badge variant={hoveredEdge.kind === "thermal" ? "amber" : hoveredEdge.kind === "electrical" ? "cyan" : "olive"}>{hoveredEdge.kind}</Badge>
                 <span>{hoveredEdge.mechanism}</span>
               </div>
-              <div className="mt-1 text-dim">Sources: {hoveredEdge.source_ids.join(", ") || "physics"}</div>
+              <div className="mt-1 font-mono text-dim">Sources: {hoveredEdge.source_ids.join(", ") || "physics"}</div>
             </div>
           )}
         </div>
