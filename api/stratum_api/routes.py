@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import APIRouter, Body, Query, Request, Response
@@ -15,11 +17,14 @@ from stratum_api.fetcher import default_resolve_host
 from stratum_api.probes import build_genai_client
 from stratum_api.run_service import (
     compute_objective_hash,
-    execute_new_run,
     execute_revision_step,
     get_evidence_crop_png,
+    initialize_new_run,
     issue_confirm_token,
+    run_new_run_background,
 )
+
+_BG_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="stratum-v0")
 
 
 def _get_doc_or_404(repo: Any, run_id: str, key: str, label: str) -> dict[str, Any]:
@@ -41,17 +46,25 @@ def build_core_router() -> APIRouter:
     def create_run(request: Request, body: dict[str, Any] = Body(...)) -> JSONResponse:
         state = request.app.state
         run_id = f"run_{uuid.uuid4().hex[:10]}"
-        client = getattr(state, "genai_client", None) or build_genai_client(state.config)
         resolver = getattr(state, "url_resolver", None) or default_resolve_host
         http_client = getattr(state, "http_client", None)
-        run_dict = execute_new_run(
+        run_dict = initialize_new_run(
             run_id=run_id,
             body=body,
             config=state.config,
             repo=state.repo,
-            client=client,
             resolver=resolver,
-            http_client=http_client,
+        )
+        client = getattr(state, "genai_client", None) or build_genai_client(state.config)
+        _BG_POOL.submit(
+            run_new_run_background,
+            run_id,
+            body,
+            state.config,
+            state.repo,
+            client,
+            resolver,
+            http_client,
         )
         return JSONResponse(status_code=201, content=run_dict)
 
@@ -64,17 +77,42 @@ def build_core_router() -> APIRouter:
         return _get_doc_or_404(request.app.state.repo, run_id, "run", "Run")
 
     @router.get("/api/runs/{run_id}/events")
-    def get_run_events(run_id: str, request: Request, fmt: str | None = Query(default=None, alias="format")) -> Response:
-        events = request.app.state.repo.list_events(run_id)
+    async def get_run_events(
+        run_id: str,
+        request: Request,
+        after: int = Query(default=0, ge=0),
+        fmt: str | None = Query(default=None, alias="format"),
+    ) -> Response:
+        repo = request.app.state.repo
         accept = request.headers.get("accept", "")
         if fmt == "json" or "application/json" in accept:
+            events = [ev for ev in repo.list_events(run_id) if int(ev.get("seq", 0)) > after]
             return JSONResponse(content=events)
 
-        def _event_stream() -> Any:
-            for ev in events:
-                yield f"data: {json.dumps(ev)}\n\n"
+        async def _event_stream() -> Any:
+            cursor = after
+            for _ in range(1200):
+                for ev in repo.list_events(run_id):
+                    seq = int(ev.get("seq", 0))
+                    if seq > cursor:
+                        cursor = seq
+                        yield f"data: {json.dumps(ev)}\n\n"
+                run_doc = repo.get_doc(run_id, "run")
+                status = str((run_doc or {}).get("status", ""))
+                if not status.endswith("_RUNNING"):
+                    for ev in repo.list_events(run_id):
+                        seq = int(ev.get("seq", 0))
+                        if seq > cursor:
+                            cursor = seq
+                            yield f"data: {json.dumps(ev)}\n\n"
+                    break
+                await asyncio.sleep(0.2)
 
-        return StreamingResponse(_event_stream(), media_type="text/event-stream")
+        return StreamingResponse(
+            _event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @router.get("/api/runs/{run_id}/spec")
     def get_spec(run_id: str, request: Request, rev: int = Query(default=0, ge=0)) -> dict[str, Any]:

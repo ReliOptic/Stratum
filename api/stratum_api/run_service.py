@@ -27,9 +27,17 @@ from contracts.generated.python.models import (
 from stratum_api.causal_agent import run_causal_and_presets, run_v0_pipeline
 from stratum_api.config import AppConfig
 from stratum_api.errors import StratumError
-from stratum_api.fetcher import crop_image_box, default_resolve_host, fetch_page_bundle
+from stratum_api.fetcher import (
+    crop_image_box,
+    default_resolve_host,
+    fetch_page_bundle,
+    validate_safe_url,
+)
+from stratum_api.logging_utils import get_logger
 from stratum_api.loop_engine import run_revision_pass, run_sandbox_crosscheck
 from stratum_api.storage import InMemoryStateRepository
+
+logger = get_logger("stratum_api.run_service")
 
 _STAGE_MAP: dict[str, EventStage] = {
     "fetch": EventStage.fetch,
@@ -76,6 +84,43 @@ def compute_objective_hash(text: str, targets: list[dict[str, Any]], base_rev: i
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def initialize_new_run(
+    run_id: str,
+    body: dict[str, Any],
+    config: AppConfig,
+    repo: InMemoryStateRepository,
+    resolver: Any = default_resolve_host,
+) -> dict[str, Any]:
+    """Validate inputs, persist initial V0_RUNNING Run record, and emit queued RunEvent."""
+    input_url = str(body.get("input_url") or body.get("url") or "").strip()
+    if not input_url:
+        raise StratumError(code="MISSING_URL", message="input_url or url is required", status_code=400)
+    validate_safe_url(input_url, resolver=resolver or default_resolve_host)
+    model_name = str(body.get("orchestrator_model") or body.get("model") or config.orchestrator_model)
+    if model_name not in config.allowed_orchestrators:
+        raise StratumError(code="DISALLOWED_MODEL", message=f"Model {model_name!r} not in ALLOWED_ORCHESTRATORS", status_code=400)
+    deep_verify = bool(body.get("deep_verify", True))
+    attachments = [str(a) for a in (body.get("attachment_names") or body.get("attachment_ids") or [])]
+    now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
+    label = "Gemini 4 Argon" if "argon" in model_name else "Gemini 3.8 Flash"
+    run_obj = Run(
+        run_id=run_id,
+        created_at=now_iso,
+        status=RunStatus.V0_RUNNING,
+        latest_revision=0,
+        orchestrator_model=model_name,
+        model_label=label,
+        deep_verify=deep_verify,
+        inputs=RunInputs(urls=[input_url], attachment_ids=attachments),
+        usage=UsageStat(context_tokens=0, output_tokens=0, sources=0, images=0, model_calls=0),
+    )
+    run_dict = run_obj.model_dump(mode="json")
+    repo.save_doc(run_id, "run", run_dict)
+    emit = make_emitter(run_id, repo, revision=0)
+    emit("fetch", "info", "queued", None, {"status": "V0_RUNNING", "url": input_url})
+    return run_dict
+
+
 def execute_new_run(
     run_id: str,
     body: dict[str, Any],
@@ -87,68 +132,82 @@ def execute_new_run(
 ) -> dict[str, Any]:
     """Fetch URL, run Agent 1 V0 + CAD + Sim + Agent 2 Causal/Presets, and persist state."""
     t0 = time.monotonic()
-    input_url = str(body.get("input_url") or body.get("url") or "").strip()
-    if not input_url:
-        raise StratumError(code="MISSING_URL", message="input_url or url is required", status_code=400)
-    model_name = str(body.get("orchestrator_model") or body.get("model") or config.orchestrator_model)
-    if model_name not in config.allowed_orchestrators:
-        raise StratumError(code="DISALLOWED_MODEL", message=f"Model {model_name!r} not in ALLOWED_ORCHESTRATORS", status_code=400)
-    deep_verify = bool(body.get("deep_verify", True))
-    attachments = [str(a) for a in (body.get("attachment_names") or body.get("attachment_ids") or [])]
+    existing = repo.get_doc(run_id, "run")
+    if existing is None:
+        existing = initialize_new_run(run_id, body, config, repo, resolver=resolver)
+    run_obj = Run.model_validate(existing)
+    input_url = run_obj.inputs.urls[0]
+    model_name = run_obj.orchestrator_model
     notes = str(body.get("product_notes") or "")
-    now_iso = dt.datetime.now(dt.timezone.utc).isoformat()
-    label = "Gemini 4 Argon" if "argon" in model_name else "Gemini 3.8 Flash"
-
-    run_obj = Run(
-        run_id=run_id,
-        created_at=now_iso,
-        status=RunStatus.REVISION_RUNNING,
-        latest_revision=0,
-        orchestrator_model=model_name,
-        model_label=label,
-        deep_verify=deep_verify,
-        inputs=RunInputs(urls=[input_url], attachment_ids=attachments),
-        usage=UsageStat(context_tokens=0, output_tokens=0, sources=0, images=0, model_calls=0),
-    )
-    repo.save_doc(run_id, "run", run_obj.model_dump(mode="json"))
     emit = make_emitter(run_id, repo, revision=0)
-    emit("fetch", "info", f"Fetching {input_url}", None, {"url": input_url})
-    bundle = fetch_page_bundle(input_url, resolver=resolver, http_client=http_client)
-    for img in bundle.images:
-        repo.save_blob(run_id, f"evidence/{img.source_id}.bin", img.data, img.mime_type)
+    try:
+        emit("fetch", "info", f"Fetching {input_url}", None, {"url": input_url})
+        bundle = fetch_page_bundle(input_url, resolver=resolver, http_client=http_client)
+        for img in bundle.images:
+            repo.save_blob(run_id, f"evidence/{img.source_id}.bin", img.data, img.mime_type)
+        spec, glb_b, step_b, manifest, metrics, sim, csv_txt, in1, out1 = run_v0_pipeline(
+            run_id, model_name, bundle, notes, config, client, emit
+        )
+        repo.save_blob(run_id, "0.glb", glb_b, "model/gltf-binary")
+        repo.save_blob(run_id, "0.step", step_b, "application/step")
+        repo.save_blob(run_id, "sim_0.csv", csv_txt.encode("utf-8"), "text/csv")
+        repo.save_doc(run_id, "spec_0", spec.model_dump(mode="json"))
+        repo.save_doc(run_id, "manifest_0", manifest.model_dump(mode="json"))
+        repo.save_doc(run_id, "metrics_0", metrics.model_dump(mode="json"))
+        repo.save_doc(run_id, "sim_0", sim.model_dump(mode="json"))
+        emit("cad", "info", "V0 3D CAD and thermal baseline ready", None, {"status": "V0_READY"})
 
-    spec, glb_b, step_b, manifest, metrics, sim, csv_txt, in1, out1 = run_v0_pipeline(
-        run_id, model_name, bundle, notes, config, client, emit
-    )
-    repo.save_blob(run_id, "0.glb", glb_b, "model/gltf-binary")
-    repo.save_blob(run_id, "0.step", step_b, "application/step")
-    repo.save_blob(run_id, "sim_0.csv", csv_txt.encode("utf-8"), "text/csv")
-    repo.save_doc(run_id, "spec_0", spec.model_dump(mode="json"))
-    repo.save_doc(run_id, "manifest_0", manifest.model_dump(mode="json"))
-    repo.save_doc(run_id, "metrics_0", metrics.model_dump(mode="json"))
-    repo.save_doc(run_id, "sim_0", sim.model_dump(mode="json"))
+        graph, presets, in2, out2 = run_causal_and_presets(spec, metrics, model_name, client, emit)
+        repo.save_doc(run_id, "graph_0", graph.model_dump(mode="json"))
+        repo.save_doc(run_id, "presets", {"presets": [p.model_dump(mode="json") for p in presets]})
+        default_obj = _preset_to_objective(presets[0], 0)
+        repo.save_doc(run_id, "objective", default_obj.model_dump(mode="json"))
 
-    graph, presets, in2, out2 = run_causal_and_presets(spec, metrics, model_name, client, emit)
-    repo.save_doc(run_id, "graph_0", graph.model_dump(mode="json"))
-    repo.save_doc(run_id, "presets", {"presets": [p.model_dump(mode="json") for p in presets]})
-    default_obj = _preset_to_objective(presets[0], 0)
-    repo.save_doc(run_id, "objective", default_obj.model_dump(mode="json"))
+        wall_s = round(time.monotonic() - t0, 3)
+        repo.save_doc(run_id, "wall_0", {"wall_time_s": wall_s, "context_tokens": in1 + in2})
+        run_obj.status = RunStatus.PRESETS_READY
+        run_obj.objective = default_obj
+        run_obj.usage = UsageStat(
+            context_tokens=in1 + in2,
+            output_tokens=out1 + out2,
+            sources=len(spec.sources),
+            images=len(bundle.images),
+            model_calls=2 + min(len(spec.parts), config.max_subagents),
+        )
+        run_dict = run_obj.model_dump(mode="json")
+        repo.save_doc(run_id, "run", run_dict)
+        emit(
+            "presets",
+            "info",
+            "V0 reconstruction and causal presets ready",
+            None,
+            {"status": "PRESETS_READY", "wall_time_s": wall_s, "usage": run_dict["usage"]},
+        )
+        return run_dict
+    except Exception as exc:
+        run_doc = repo.get_doc(run_id, "run") or run_obj.model_dump(mode="json")
+        run_doc["status"] = RunStatus.FAILED.value
+        run_doc["error"] = str(exc)
+        repo.save_doc(run_id, "run", run_doc)
+        emit("v0", "error", f"V0 failed: {exc}", None, {"status": "FAILED", "error": str(exc)})
+        logger.log_event("v0_failed", run_id=run_id, stage="v0", level="ERROR", message=str(exc))
+        raise
 
-    wall_s = round(time.monotonic() - t0, 3)
-    repo.save_doc(run_id, "wall_0", {"wall_time_s": wall_s, "context_tokens": in1 + in2})
-    run_obj.status = RunStatus.PRESETS_READY
-    run_obj.objective = default_obj
-    run_obj.usage = UsageStat(
-        context_tokens=in1 + in2,
-        output_tokens=out1 + out2,
-        sources=len(spec.sources),
-        images=len(bundle.images),
-        model_calls=2 + min(len(spec.parts), config.max_subagents),
-    )
-    run_dict = run_obj.model_dump(mode="json")
-    repo.save_doc(run_id, "run", run_dict)
-    emit("presets", "info", "V0 reconstruction and causal presets ready", None, {"wall_time_s": wall_s})
-    return run_dict
+
+def run_new_run_background(
+    run_id: str,
+    body: dict[str, Any],
+    config: AppConfig,
+    repo: InMemoryStateRepository,
+    client: Any,
+    resolver: Any = default_resolve_host,
+    http_client: Any | None = None,
+) -> None:
+    """Execute V0 pipeline in background thread, recording FAILED status on any uncaught error."""
+    try:
+        execute_new_run(run_id, body, config, repo, client, resolver=resolver, http_client=http_client)
+    except Exception:  # noqa: BLE001
+        return
 
 
 def _preset_to_objective(preset: Preset, base_rev: int) -> Objective:

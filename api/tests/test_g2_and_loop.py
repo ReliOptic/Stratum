@@ -153,6 +153,18 @@ def test_evidence_discipline_downgrades_unverified_sources() -> None:
     assert "evidence_downgraded" in events
 
 
+def _wait_for_run_done(client: TestClient, run_id: str, timeout_s: float = 10.0) -> dict[str, Any]:
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        doc = client.get(f"/api/runs/{run_id}").json()
+        if not str(doc.get("status", "")).endswith("_RUNNING"):
+            return doc
+        time.sleep(0.05)
+    return client.get(f"/api/runs/{run_id}").json()
+
+
 def test_end_to_end_closed_loop_v0_v1_bridge_v2() -> None:
     """Verify full V0 -> Preset -> Confirm V1 -> Bridge -> Callback -> Confirm V2 loop."""
     cfg = load_config({})
@@ -171,7 +183,12 @@ def test_end_to_end_closed_loop_v0_v1_bridge_v2() -> None:
     r_create = client.post("/api/runs", json={"input_url": "https://example.org/widget-a"})
     assert r_create.status_code == 201
     run_id = r_create.json()["run_id"]
-    assert r_create.json()["status"] == "PRESETS_READY"
+    assert r_create.json()["status"] in ("V0_RUNNING", "PRESETS_READY")
+    final_run = _wait_for_run_done(client, run_id)
+    assert final_run["status"] == "PRESETS_READY"
+    events = client.get(f"/api/runs/{run_id}/events?format=json").json()
+    assert events[0]["seq"] == 1
+    assert events[0]["message"] == "queued"
 
     assert client.get(f"/api/runs/{run_id}/spec?rev=0").status_code == 200
     assert client.get(f"/api/runs/{run_id}/artifacts/0.glb").status_code == 200
@@ -221,8 +238,8 @@ def test_end_to_end_closed_loop_v0_v1_bridge_v2() -> None:
     assert client.get("/api/benchmarks").status_code == 200
 
 
-def test_create_app_default_resolver_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify create_app() with default url_resolver=None uses default_resolve_host via socket.getaddrinfo."""
+def test_create_app_default_resolver_and_bg_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify default resolver via socket.getaddrinfo and FAILED + error RunEvent on background exception."""
     import socket
 
     resolved_hosts: list[str] = []
@@ -245,4 +262,18 @@ def test_create_app_default_resolver_path(monkeypatch: pytest.MonkeyPatch) -> No
     )
     assert resp.status_code == 201
     assert "www.anker.com" in resolved_hosts
+    done = _wait_for_run_done(client, resp.json()["run_id"])
+    assert done["status"] == "PRESETS_READY"
+
+    monkeypatch.setattr(
+        "stratum_api.run_service.run_v0_pipeline",
+        lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("boom in v0")),
+    )
+    r_fail = client.post("/api/runs", json={"url": "https://www.anker.com/products/a1665"})
+    assert r_fail.status_code == 201
+    fail_doc = _wait_for_run_done(client, r_fail.json()["run_id"])
+    assert fail_doc["status"] == "FAILED"
+    fail_events = client.get(f"/api/runs/{r_fail.json()['run_id']}/events?format=json").json()
+    assert any(ev["level"] == "error" and ev["data"].get("status") == "FAILED" for ev in fail_events)
+
 
