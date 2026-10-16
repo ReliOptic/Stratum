@@ -19,7 +19,10 @@ from stratum_api.probes import (
     run_agent_probe,
     run_gemini_probe,
 )
+from stratum_api.routes import build_core_router
+from stratum_api.routes_audit import build_audit_router
 from stratum_api.session import SessionCookieMiddleware
+from stratum_api.storage import create_repository
 
 logger = get_logger("stratum_api.app")
 
@@ -53,22 +56,31 @@ def create_app(
     *,
     probe_cooldown_s: float = 60.0,
     genai_client: Any | None = None,
+    repo: Any | None = None,
+    url_resolver: Any | None = None,
+    http_client: Any | None = None,
 ) -> FastAPI:
     """Create and configure the Stratum FastAPI application."""
     cfg = config or load_config()
     validate_config(cfg)
     limiter = ProbeRateLimiter(cooldown_s=probe_cooldown_s)
+    state_repo = repo or create_repository(cfg)
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         cad_ok, cad_reason = check_cad_engine()
         application.state.cad_ok = cad_ok
         application.state.cad_reason = cad_reason
+        recovered = application.state.repo.recover_interrupted_runs()
         logger.log_event(
             "app_startup",
             stage="startup",
             message="Stratum API initialized",
-            extra={"cad_ok": cad_ok, "cad_reason": cad_reason},
+            extra={
+                "cad_ok": cad_ok,
+                "cad_reason": cad_reason,
+                "recovered_runs": recovered,
+            },
         )
         yield
 
@@ -80,6 +92,9 @@ def create_app(
     application.state.config = cfg
     application.state.rate_limiter = limiter
     application.state.genai_client = genai_client
+    application.state.repo = state_repo
+    application.state.url_resolver = url_resolver
+    application.state.http_client = http_client
     cad_ok, cad_reason = check_cad_engine()
     application.state.cad_ok = cad_ok
     application.state.cad_reason = cad_reason
@@ -89,6 +104,8 @@ def create_app(
         SessionCookieMiddleware, secret=cfg.session_secret
     )
     _register_routes(application)
+    application.include_router(build_core_router())
+    application.include_router(build_audit_router())
 
     dist_path = Path(cfg.web_dist_dir)
     if dist_path.is_dir():

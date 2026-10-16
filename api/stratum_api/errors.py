@@ -15,7 +15,7 @@ class StratumError(Exception):
         self,
         code: str,
         message: str,
-        recovery_hint: str,
+        recovery_hint: str = "Check request parameters and retry.",
         *,
         status_code: int = 400,
         details: dict[str, Any] | None = None,

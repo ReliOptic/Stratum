@@ -80,11 +80,14 @@ def _apply_revision_changes(spec: EngineeringSpec) -> list[tuple[str, str]]:
     actions: list[tuple[str, str]] = []
     for part in spec.parts:
         roles = {r.value for r in part.roles}
-        if "thermal_spreader" in roles and part.cad_ops:
-            old_x = float(part.cad_ops[0].params.get("x_mm", 30.0))
-            new_x = round(old_x * 1.15, 2)
-            part.cad_ops[0].params["x_mm"] = new_x
-            actions.append((part.part_id, f"Expand spreader x_mm {old_x} -> {new_x} mm"))
+        if "thermal_spreader" in roles:
+            old_mat = part.material
+            new_mat = "copper_c110" if old_mat != "copper_c110" else "aluminum_6061"
+            part.material = new_mat
+            for pr in part.parameters:
+                if pr.unit in ("g", "mm", "mm2") and isinstance(pr.value, (int, float)):
+                    pr.value = round(float(pr.value) * 1.15, 2)
+            actions.append((part.part_id, f"Upgrade spreader material {old_mat} -> {new_mat} and thermal mass"))
         elif "heat_source" in roles:
             for pr in part.parameters:
                 if pr.unit == "W" and isinstance(pr.value, (int, float)):
@@ -133,7 +136,14 @@ def run_revision_pass(
     new_spec.revision = revision
     new_spec.base_revision = BaseRevision(prev_spec.revision)
     actions = _apply_revision_changes(new_spec)
-    comp, c_manifest, c_metrics, cad_sim, c_sim = compile_and_simulate_spec(new_spec)
+    try:
+        comp, c_manifest, c_metrics, cad_sim, c_sim = compile_and_simulate_spec(new_spec)
+    except Exception as exc:  # noqa: BLE001
+        emit("cad", "warn", f"CAD repair fallback on V{revision}: {exc}", None, {})
+        for idx_p, p in enumerate(new_spec.parts):
+            if idx_p < len(prev_spec.parts):
+                p.cad_ops = prev_spec.parts[idx_p].model_copy(deep=True).cad_ops
+        comp, c_manifest, c_metrics, cad_sim, c_sim = compile_and_simulate_spec(new_spec)
 
     reports: list[PassReport] = []
     for idx, (pid, act_desc) in enumerate(actions[:3], start=1):
@@ -199,17 +209,38 @@ def run_sandbox_crosscheck(
         )
 
 
-def create_bridge_bundle(run_id: str, revision: int, spec: EngineeringSpec, base_url: str) -> tuple[dict[str, Any], str, bytes]:
+def create_bridge_bundle(
+    run_id: str,
+    revision: int,
+    spec_new: EngineeringSpec,
+    base_url: str,
+    spec_base: EngineeringSpec | None = None,
+    graph: Any = None,
+) -> tuple[dict[str, Any], str, bytes]:
     """Generate Simulink bridge zip bundle and return (bridge_meta, raw_token, zip_bytes)."""
     raw_token = secrets.token_urlsafe(24)
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    cad_spec = contract_spec_to_cad_spec(spec)
-    comp = compile_parts(cad_spec.parts, run_id=run_id, revision=revision)
-    cad_mset = compute_metrics(cad_spec, comp.manifest)
-    cad_sim = simulate(cad_spec, comp.manifest)
+    cad_new = contract_spec_to_cad_spec(spec_new)
+    cad_base = contract_spec_to_cad_spec(spec_base or spec_new)
+    comp_base = compile_parts(cad_base.parts, run_id=run_id, revision=cad_base.revision)
+    comp_new = compile_parts(cad_new.parts, run_id=run_id, revision=cad_new.revision)
+    m_base = compute_metrics(cad_base, comp_base.manifest)
+    m_new = compute_metrics(cad_new, comp_new.manifest)
+    sim_base = simulate(cad_base, comp_base.manifest)
+    sim_new = simulate(cad_new, comp_new.manifest)
     zip_bytes = build_bridge_zip(
-        run_id=run_id, revision=revision, spec=cad_spec, manifest=comp.manifest, metrics=cad_mset,
-        sim_result=cad_sim, step_bytes=comp.step_bytes, glb_bytes=comp.glb_bytes, api_url=base_url.rstrip("/"), token=raw_token,
+        run_id,
+        cad_base,
+        cad_new,
+        m_base,
+        m_new,
+        sim_base,
+        sim_new,
+        graph,
+        comp_base.step_bytes,
+        comp_new.step_bytes,
+        manifest_base=comp_base.manifest,
+        manifest_new=comp_new.manifest,
     )
     exp_iso = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=2)).isoformat()
     cmd = f"stratum_run('{base_url.rstrip('/')}', '{raw_token}')"
