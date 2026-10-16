@@ -9,6 +9,7 @@ import {
   triggerRevision,
   uploadExternalResults,
 } from "@/lib/api";
+import type { Preset } from "@/lib/contracts";
 import {
   connectRunEventStream,
   createInitialTelemetryState,
@@ -20,24 +21,15 @@ import {
   createObjectiveDraftState,
   type ExternalImportMode,
   type ObjectiveDraftState,
+  selectPresetDraft,
   updateObjectiveDraft,
 } from "@/lib/state";
 import { createStratumError, isStratumError, type StratumError } from "@/lib/utils";
 
 const EMPTY_BUNDLE: RevisionBundle = {
-  spec: null,
-  graph: null,
-  manifest: null,
-  metrics: null,
-  baseMetrics: null,
-  sim: null,
-  baseSim: null,
-  presets: [],
-  variants: [],
-  passes: [],
-  sandbox: null,
-  loopNodes: [],
-  benchmarks: [],
+  spec: null, graph: null, manifest: null, metrics: null, baseMetrics: null,
+  sim: null, baseSim: null, presets: [], variants: [], passes: [],
+  sandbox: null, loopNodes: [], benchmarks: [],
 };
 
 export interface StratumRunController {
@@ -54,6 +46,7 @@ export interface StratumRunController {
   readonly setSelectedPartId: (partId: string) => void;
   readonly selectRevision: (rev: number) => void;
   readonly updateDraft: (text: string, presetId?: string | null) => void;
+  readonly selectPreset: (preset: Preset) => void;
   readonly submitRun: (payload: ReconstructRequestPayload) => Promise<void>;
   readonly confirmCurrentObjective: () => Promise<void>;
   readonly executeRevision: () => Promise<void>;
@@ -120,12 +113,7 @@ export function useStratumRun(): StratumRunController {
       const created = await createRun(payload);
       const rev = created.latest_revision ?? 0;
       setRunId(created.run_id);
-      setTelemetry((prev) => ({
-        ...prev,
-        status: created.status,
-        latestRevision: rev,
-        usage: created.usage ?? prev.usage,
-      }));
+      setTelemetry((prev) => ({ ...prev, status: created.status, latestRevision: rev, usage: created.usage ?? prev.usage }));
       setActiveRevision(rev);
       await refreshBundle(created.run_id, rev);
     } catch (err: unknown) {
@@ -141,6 +129,7 @@ export function useStratumRun(): StratumRunController {
     try {
       const { objective, confirmation } = await confirmObjective(runId, activeRevision, objectiveDraft.text);
       setObjectiveDraft((prev) => confirmObjectiveDraft(prev, objective, confirmation));
+      setTelemetry((prev) => ({ ...prev, status: "OBJECTIVE_CONFIRMED" }));
     } catch (err: unknown) {
       captureError(err);
     }
@@ -187,11 +176,17 @@ export function useStratumRun(): StratumRunController {
     runId, busy, telemetry, activeRevision, selectedPartId, bundle, objectiveDraft,
     matlabWaitingExpiry, externalImported, errorBanner, setSelectedPartId,
     selectRevision: (rev: number) => { setActiveRevision(rev); if (runId) void refreshBundle(runId, rev); },
-    updateDraft: (txt: string, pid?: string | null) => setObjectiveDraft((prev) => updateObjectiveDraft(prev, txt, pid)),
+    updateDraft: (txt: string, pid?: string | null) => {
+      setObjectiveDraft((prev) => updateObjectiveDraft(prev, txt, pid));
+      setTelemetry((prev) => (prev.status === "OBJECTIVE_CONFIRMED" ? { ...prev, status: "PRESETS_READY" } : prev));
+    },
+    selectPreset: (preset: Preset) => {
+      setObjectiveDraft((prev) => selectPresetDraft(prev, preset));
+      setTelemetry((prev) => (prev.status === "OBJECTIVE_CONFIRMED" ? { ...prev, status: "PRESETS_READY" } : prev));
+    },
     submitRun, confirmCurrentObjective, executeRevision, runMatlabOnline, importExternal,
     startNextRound: () => setObjectiveDraft({
-      baseRevision: telemetry.latestRevision,
-      text: nextRoundObjective || "Refine design based on external audit",
+      baseRevision: telemetry.latestRevision, text: nextRoundObjective || "Refine design based on external audit",
       selectedPresetId: null, confirmToken: null, expiresAt: null, targets: [], objectiveHash: null,
     }),
   };

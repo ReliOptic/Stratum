@@ -99,7 +99,7 @@ async function registerWidgetARoutes(page: Page, getImported: () => boolean): Pr
   await page.route("**/api/runs/run-widget-a-001/sandbox*", (r) => r.fulfill(jsonRoute(null)));
 }
 
-test("G1-UI steps 1-3 with widget-a fixtures, 409 confirm guard, and import audit badge", async ({
+test("G2-UI steps 1-6: 3-file cap, GLB by rev, explode, x-ray ghosts, causal splines, 409 confirm guard", async ({
   page,
 }, testInfo) => {
   let imported = false;
@@ -117,27 +117,45 @@ test("G1-UI steps 1-3 with widget-a fixtures, 409 confirm guard, and import audi
 
   await page.goto("/");
   await expect(page.getByTestId("onboarding-header")).toHaveAttribute("data-docked", "false");
-  await expect(page.getByTestId("thesis-line")).toContainText(
-    "Can Gemini 4 Argon make the physical world safer?",
-  );
-  await expect(page.getByTestId("subagent-note")).toContainText("Part sub-agents: Gemini 3.8 Flash");
+  await expect(page.getByTestId("attachment-button")).toContainText("Attach (0/3)");
+  await page.getByTestId("attachment-file-input").setInputFiles([
+    { name: "1.png", mimeType: "image/png", buffer: Buffer.from("1") },
+    { name: "2.png", mimeType: "image/png", buffer: Buffer.from("2") },
+    { name: "3.png", mimeType: "image/png", buffer: Buffer.from("3") },
+    { name: "4.png", mimeType: "image/png", buffer: Buffer.from("4") },
+  ]);
+  await expect(page.getByTestId("attachment-button")).toContainText("Attach (3/3)");
+  await expect(page.getByTestId("attachment-validation-note")).toContainText("Attachment limit is 3 files");
 
   await page.getByTestId("product-url-input").fill("https://example.invalid/widget-a");
   await page.getByTestId("reconstruct-button").click();
 
   await expect(page.getByTestId("onboarding-header")).toHaveAttribute("data-docked", "true");
-  await expect(page.getByTestId("context-counter")).toContainText(
-    "Evidence in context: 12400 tokens · 1 sources · 0 images · 2 model calls",
-  );
-  await expect(page.getByTestId("evidence-ledger")).toContainText("Outer Shell (outer-shell)");
+  await expect(page.getByTestId("viewport-3d")).toHaveAttribute("data-glb-rev", "0");
+  await expect(page.getByTestId("viewport-3d")).toHaveAttribute("data-mapped-parts", "4");
+
+  await page.getByTestId("viewport-node-core-stage").click();
+  await expect(page.getByTestId("viewport-node-core-stage")).toHaveAttribute("data-visual-state", "active-amber");
+  await expect(page.getByTestId("viewport-node-outer-shell")).toHaveAttribute("data-visual-state", "xray-ghost-15");
+  await expect(page.getByTestId("evidence-ledger")).toContainText("Core Stage (core-stage)");
+
   await page.getByTestId("rail-part-storage-cell").click();
-  await expect(page.getByTestId("param-row-clearance_to_heat_source")).toContainText("model_prior");
-  await expect(page.getByTestId("revise-button")).toBeDisabled();
+  await page.getByTestId("param-row-clearance_to_heat_source").click();
+  await expect(page.getByTestId("viewport-3d")).toHaveAttribute("data-active-part", "storage-cell");
+
+  await page.getByTestId("explode-slider").fill("0.5");
+  await expect(page.getByTestId("explode-percent")).toHaveText("50%");
+
+  await page.getByTestId("causal-spline-core-stage-storage-cell").click();
+  await expect(page.getByTestId("spline-tooltip")).toContainText(
+    "Conductive and radiative heat transfer across internal gap",
+  );
+  await expect(page.getByTestId("spline-tooltip")).toContainText("src-page-1");
 
   await page.route("**/api/runs/run-widget-a-001/objective", (r) =>
     r.fulfill(
       jsonRoute({
-        text: "Reduce widget-a peak temperature",
+        text: "Reduce steady-state temperature on core-stage and storage-cell",
         targets: [{ metric_id: "peak_temp_C", comparator: "lte", threshold: 58.0, unit: "C" }],
         base_revision: 0,
         objective_hash: "hash-widget-a-001",
@@ -146,10 +164,13 @@ test("G1-UI steps 1-3 with widget-a fixtures, 409 confirm guard, and import audi
   );
   await page.route("**/api/runs/run-widget-a-001/objective/confirm", (r) => r.fulfill(jsonRoute({}, 409)));
 
-  await page.getByTestId("objective-input").fill("Reduce widget-a peak temperature");
-  await page.getByTestId("open-confirm-modal-button").click();
+  await page.getByTestId("preset-thermal_margin").click();
+  await expect(page.getByTestId("objective-confirm-modal")).toBeVisible();
+  await expect(page.getByTestId("confirm-targets-list")).toContainText("peak_temp_C <= 58 C");
+  await page.getByTestId("modal-confirm-button").click();
   await expect(page.getByTestId("deck-error-banner")).toContainText("409");
-  await page.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByTestId("modal-409-recovery")).toContainText("Click Confirm Objective");
+  await expect(page.getByTestId("revise-button")).toBeDisabled();
 
   await page.unroute("**/api/runs/run-widget-a-001/objective/confirm");
   await page.route("**/api/runs/run-widget-a-001/objective/confirm", (r) =>
@@ -159,10 +180,12 @@ test("G1-UI steps 1-3 with widget-a fixtures, 409 confirm guard, and import audi
     r.fulfill(jsonRoute({ revision: 1, status: "V1_READY" })),
   );
 
-  await page.getByTestId("open-confirm-modal-button").click();
-  await page.getByRole("button", { name: "Close" }).click();
+  await page.getByTestId("modal-confirm-button").click();
+  await expect(page.getByTestId("run-status-badge")).toHaveText("OBJECTIVE_CONFIRMED");
+  await page.getByTestId("modal-close-button").click();
   await expect(page.getByTestId("revise-button")).toBeEnabled();
   await page.getByTestId("revise-button").click();
+  await expect(page.getByTestId("viewport-3d")).toHaveAttribute("data-glb-rev", "1");
 
   await page.getByTestId("import-results-toggle").click();
   await page.getByTestId("external-results-file-input").setInputFiles([
@@ -172,5 +195,5 @@ test("G1-UI steps 1-3 with widget-a fixtures, 409 confirm guard, and import audi
   ]);
 
   await expect(page.getByTestId("audit-badge")).toContainText("AUDIT MATCH");
-  await page.screenshot({ path: `test-results/g1-ui-${testInfo.project.name}.png` });
+  await page.screenshot({ path: `test-results/g2-ui-${testInfo.project.name}.png` });
 });

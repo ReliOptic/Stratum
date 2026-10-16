@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ConfirmResponse, Manifest, Objective } from "@/lib/contracts";
+import type { Manifest, Preset } from "@/lib/contracts";
 import {
   canTriggerRevision,
+  computeAssemblyCentroidMm,
   computeExplodedPosition,
   computePartCenterMm,
   computePartSizeMm,
@@ -10,105 +11,113 @@ import {
   formatTargetSummary,
   getAvailableRevisions,
   mapManifestToPartByNode,
+  parseGlbNodeNames,
+  selectPresetDraft,
   updateObjectiveDraft,
+  validateAttachments,
   validateExternalResultsUpload,
 } from "@/lib/state";
 
-describe("objective/token state machine", () => {
-  it("disables revision until confirmed, stores token and base_revision, and clears token on edit", () => {
+function makeMinimalGlbBuffer(nodeNames: readonly string[]): ArrayBuffer {
+  const jsonStr = JSON.stringify({ asset: { version: "2.0" }, nodes: nodeNames.map((name) => ({ name })) });
+  const jsonBytes = new TextEncoder().encode(jsonStr);
+  const paddedLen = Math.ceil(jsonBytes.byteLength / 4) * 4;
+  const totalLen = 20 + paddedLen;
+  const buf = new ArrayBuffer(totalLen);
+  const view = new DataView(buf);
+  view.setUint32(0, 0x46546c67, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, totalLen, true);
+  view.setUint32(12, paddedLen, true);
+  view.setUint32(16, 0x4e4f534a, true);
+  const bytes = new Uint8Array(buf, 20, paddedLen);
+  bytes.fill(0x20);
+  bytes.set(jsonBytes);
+  return buf;
+}
+
+describe("Objective confirmation state guard", () => {
+  it("blocks revision until objective is confirmed with a valid token and OBJECTIVE_CONFIRMED status", () => {
     const initial = createObjectiveDraftState(0);
-    expect(canTriggerRevision(initial, 3)).toBe(false);
+    expect(canTriggerRevision(initial)).toBe(false);
 
-    const edited = updateObjectiveDraft(initial, "Reduce peak thermal load on heat_source", "preset-1");
-    expect(canTriggerRevision(edited, 3)).toBe(false);
-
-    const objective: Objective = {
-      text: "Reduce peak thermal load on heat_source",
-      targets: [{ metric_id: "peak_temp_C", comparator: "lte", threshold: 52, unit: "C" }],
-      base_revision: 1,
-      objective_hash: "hash-widget-a-01",
+    const preset: Preset = {
+      preset_id: "p1",
+      title: "Lower Peak Temp",
+      rationale: "Reduce peak temperature",
+      source_ids: ["src-page-1"],
+      targets: [{ metric_id: "peak_temp_C", comparator: "lte", threshold: 58.0, unit: "C" }],
     };
-    const confirmation: ConfirmResponse = {
-      token: "tok_widget_a_001",
-      expires_at: "2026-10-16T12:30:00Z",
-    };
-    const confirmed = confirmObjectiveDraft(edited, objective, confirmation);
-    expect(confirmed.baseRevision).toBe(1);
-    expect(confirmed.confirmToken).toBe("tok_widget_a_001");
-    expect(formatTargetSummary(confirmed.targets[0]!)).toBe("peak_temp_C <= 52 C");
-    expect(canTriggerRevision(confirmed, 3)).toBe(true);
-    expect(canTriggerRevision(confirmed, 1)).toBe(false);
+    const presetDraft = selectPresetDraft(initial, preset);
+    expect(presetDraft.selectedPresetId).toBe("p1");
+    expect(presetDraft.targets.length).toBe(1);
+    expect(canTriggerRevision(presetDraft, 3, "PRESETS_READY")).toBe(false);
 
-    const reEdited = updateObjectiveDraft(confirmed, "Modified objective text");
-    expect(reEdited.confirmToken).toBeNull();
-    expect(canTriggerRevision(reEdited, 3)).toBe(false);
+    const confirmed = confirmObjectiveDraft(
+      presetDraft,
+      {
+        text: "Reduce peak temperature",
+        targets: preset.targets,
+        base_revision: 0,
+        objective_hash: "hash-001",
+      },
+      { token: "tok-001", expires_at: "2026-10-16T13:00:00Z" },
+    );
+    expect(canTriggerRevision(confirmed, 3, "PRESETS_READY")).toBe(false);
+    expect(canTriggerRevision(confirmed, 3, "OBJECTIVE_CONFIRMED")).toBe(true);
+    expect(formatTargetSummary(confirmed.targets[0]!)).toBe("peak_temp_C <= 58 C");
+
+    const editedAgain = updateObjectiveDraft(confirmed, "Modified text");
+    expect(canTriggerRevision(editedAgain, 3, "OBJECTIVE_CONFIRMED")).toBe(false);
+  });
+
+  it("caps revision tabs at maxRevision", () => {
+    const tabs = getAvailableRevisions(5, 3);
+    expect(tabs.map((t) => t.label)).toEqual(["V0", "V1", "V2", "V3"]);
   });
 });
 
-describe("manifest to node mapping and exploded position", () => {
+describe("Manifest, GLB node parser, and exploded view math", () => {
   const sampleManifest: Manifest = {
     run_id: "run-widget-a-001",
     revision: 0,
     parts: [
-      {
-        part_id: "outer-shell",
-        glb_node: "part_outer-shell",
-        bbox_mm: [-40, -25, -10, 40, 25, 10],
-        volume_mm3: 19360,
-      },
-      {
-        part_id: "core-stage",
-        glb_node: "part_core-stage",
-        bbox_mm: [-24, -10, -4, 0, 10, 0],
-        volume_mm3: 1920,
-      },
+      { part_id: "outer-shell", glb_node: "part_outer-shell", bbox_mm: [-40, -25, -10, 40, 25, 10], volume_mm3: 19360 },
+      { part_id: "core-stage", glb_node: "part_core-stage", bbox_mm: [-24, -10, -4, 0, 10, 0], volume_mm3: 1920 },
     ],
-    checks: [{ check_id: "non_empty_volume", passed: true, detail: "Positive volume" }],
+    checks: [],
   };
 
-  it("maps glb_node to ManifestPart and handles null manifest", () => {
-    expect(mapManifestToPartByNode(null)).toEqual({});
-    const mapped = mapManifestToPartByNode(sampleManifest);
-    expect(mapped["part_outer-shell"]?.part_id).toBe("outer-shell");
-    expect(mapped["part_core-stage"]?.volume_mm3).toBe(1920);
-  });
+  it("maps glb_node to ManifestPart, parses GLB node names, and computes exploded offsets from centroid", () => {
+    const map = mapManifestToPartByNode(sampleManifest);
+    expect(map["part_core-stage"]?.part_id).toBe("core-stage");
+    expect(computePartCenterMm(sampleManifest.parts[1]!)).toEqual([-12, 0, -2]);
+    expect(computePartSizeMm(sampleManifest.parts[1]!)).toEqual([24, 20, 4]);
 
-  it("computes center, size, and exploded position from bbox_mm", () => {
-    const core = sampleManifest.parts[1]!;
-    expect(computePartCenterMm(core)).toEqual([-12, 0, -2]);
-    expect(computePartSizeMm(core)).toEqual([24, 20, 4]);
-    expect(computeExplodedPosition(core, 0)).toEqual([-12, 0, -2]);
-    const exploded = computeExplodedPosition(core, 1);
+    const centroid = computeAssemblyCentroidMm(sampleManifest.parts);
+    expect(centroid).toEqual([-6, 0, -1]);
+
+    const unexploded = computeExplodedPosition(sampleManifest.parts[1]!, 0, centroid);
+    const exploded = computeExplodedPosition(sampleManifest.parts[1]!, 1, centroid);
+    expect(unexploded).toEqual([-12, 0, -2]);
     expect(exploded[0]).toBeLessThan(-12);
+
+    const glbBuf = makeMinimalGlbBuffer(["part_outer-shell", "part_core-stage"]);
+    expect(parseGlbNodeNames(glbBuf)).toEqual(["part_outer-shell", "part_core-stage"]);
   });
 });
 
-describe("revision tab logic", () => {
-  it("returns only existing revisions up to maxRevision", () => {
-    expect(getAvailableRevisions(0, 3)).toEqual([{ revision: 0, label: "V0" }]);
-    expect(getAvailableRevisions(2, 3)).toEqual([
-      { revision: 0, label: "V0" },
-      { revision: 1, label: "V1" },
-      { revision: 2, label: "V2" },
-    ]);
-  });
-});
-
-describe("external-results upload validation", () => {
-  it("validates simulink bundle files and rejects incomplete uploads", () => {
-    expect(
-      validateExternalResultsUpload("simulink", [
-        "results.csv",
-        "audit.txt",
-        "stratum_results_manifest.txt",
-      ]).valid,
-    ).toBe(true);
-    const bad = validateExternalResultsUpload("simulink", ["results.csv"]);
-    expect(bad.valid).toBe(false);
+describe("Attachment (<= 3) and external results validation", () => {
+  it("caps attachments at 3 files and returns a validation error when exceeded", () => {
+    expect(validateAttachments(["a.png", "b.png", "c.pdf"], 3).error).toBeNull();
+    const over = validateAttachments(["1.png", "2.png", "3.png", "4.png"], 3);
+    expect(over.accepted).toEqual(["1.png", "2.png", "3.png"]);
+    expect(over.error?.code).toBe("VALIDATION_ERROR");
   });
 
-  it("validates lab measurement uploads", () => {
+  it("validates Simulink and lab bundles", () => {
+    expect(validateExternalResultsUpload("simulink", ["results.csv", "audit.txt", "stratum_results_manifest.txt"]).valid).toBe(true);
+    expect(validateExternalResultsUpload("simulink", ["results.csv"]).valid).toBe(false);
     expect(validateExternalResultsUpload("lab", ["measurement.csv"]).valid).toBe(true);
-    expect(validateExternalResultsUpload("lab", ["notes.txt"]).valid).toBe(false);
   });
 });

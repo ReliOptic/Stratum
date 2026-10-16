@@ -13,7 +13,7 @@ export function App(): React.JSX.Element {
   const docked = ctrl.runId !== null;
 
   return (
-    <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-bg text-text">
+    <div className="relative flex min-h-screen w-screen flex-col overflow-x-hidden overflow-y-auto bg-bg text-text md:h-screen md:overflow-hidden">
       <OnboardingHeader
         docked={docked}
         runId={ctrl.runId}
@@ -22,8 +22,9 @@ export function App(): React.JSX.Element {
       />
 
       <main className="relative flex min-h-0 flex-1 flex-col md:flex-row">
-        <div className="relative min-h-0 flex-1">
+        <div className="relative h-64 shrink-0 md:h-auto md:min-h-0 md:flex-1 md:shrink">
           <Viewport3D
+            runId={ctrl.runId}
             manifest={ctrl.bundle.manifest}
             edges={ctrl.bundle.graph?.edges ?? []}
             selectedPartId={ctrl.selectedPartId}
@@ -50,9 +51,11 @@ export function App(): React.JSX.Element {
       </main>
 
       <ControlDeck
+        runStatus={ctrl.telemetry.status}
         presets={ctrl.bundle.presets}
         objectiveDraft={ctrl.objectiveDraft}
         onUpdateDraftText={ctrl.updateDraft}
+        onSelectPreset={ctrl.selectPreset}
         onRequestConfirmObjective={() => void ctrl.confirmCurrentObjective()}
         onExecuteRevision={() => void ctrl.executeRevision()}
         loopNodes={ctrl.bundle.loopNodes}

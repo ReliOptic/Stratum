@@ -1,22 +1,6 @@
 import type { ReconstructRequestPayload } from "@/components/PromptBar";
 import { appConfig } from "@/lib/config";
-import type {
-  BenchmarkComparison,
-  ComponentGraph,
-  ConfirmResponse,
-  EngineeringSpec,
-  LoopNode,
-  Manifest,
-  MetricSet,
-  Objective,
-  PassReport,
-  Preset,
-  Run,
-  RunStatus,
-  SandboxCheck,
-  SimResult,
-  Variant,
-} from "@/lib/contracts";
+import type { BenchmarkComparison, ComponentGraph, ConfirmResponse, EngineeringSpec, LoopNode, Manifest, MetricSet, Objective, PassReport, Preset, Run, RunStatus, SandboxCheck, SimResult, Variant } from "@/lib/contracts";
 import type { ExternalImportMode } from "@/lib/state";
 import { createStratumError, logStructured } from "@/lib/utils";
 
@@ -139,11 +123,33 @@ export async function confirmObjective(
   const objective = await requestJson<Objective>(`/runs/${id}/objective`, { method: "POST", headers, body }, runId, "objective");
   const confirmation = await requestJson<ConfirmResponse>(
     `/runs/${id}/objective/confirm`,
-    { method: "POST", headers, body: JSON.stringify({ objective_hash: objective.objective_hash, base_revision: baseRevision }) },
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        objective_hash: objective.objective_hash,
+        base_revision: baseRevision,
+        confirmed_by_user: true,
+      }),
+    },
     runId,
     "objective_confirm",
   );
   return { objective, confirmation };
+}
+
+export function buildArtifactGlbUrl(runId: string, rev: number): string {
+  return `${appConfig.apiBaseUrl}/runs/${encodeURIComponent(runId)}/artifacts/${rev}.glb`;
+}
+
+export async function fetchArtifactGlbBuffer(runId: string, rev: number): Promise<ArrayBuffer | null> {
+  try {
+    const res = await fetch(buildArtifactGlbUrl(runId, rev), { method: "GET", credentials: "include" });
+    if (!res.ok) return null;
+    return await res.arrayBuffer();
+  } catch {
+    return null;
+  }
 }
 
 export async function triggerRevision(

@@ -37,9 +37,10 @@ interface PartEvidenceSectionProps {
   readonly sourceMap: Readonly<Record<string, EvidenceSource>>;
   readonly crops: readonly ImageEvidenceCrop[];
   readonly onOpenCrop: (crop: ImageEvidenceCrop) => void;
+  readonly onSelectPart: (partId: string) => void;
 }
 
-function PartEvidenceSection({ part, sourceMap, crops, onOpenCrop }: PartEvidenceSectionProps): React.JSX.Element {
+function PartEvidenceSection({ part, sourceMap, crops, onOpenCrop, onSelectPart }: PartEvidenceSectionProps): React.JSX.Element {
   return (
     <div className="flex flex-col gap-2 border-t border-hairline pt-2" data-testid="evidence-ledger">
       <div className="flex flex-wrap items-center justify-between gap-1">
@@ -52,11 +53,16 @@ function PartEvidenceSection({ part, sourceMap, crops, onOpenCrop }: PartEvidenc
         {part.parameters.map((param) => (
           <div
             key={param.name}
+            role="button"
+            tabIndex={0}
             data-testid={`param-row-${param.name}`}
+            data-part-id={part.part_id}
+            onClick={() => onSelectPart(part.part_id)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSelectPart(part.part_id); }}
             className={
               param.status === "UNKNOWN" || param.basis_type === "model_prior"
-                ? "rounded-sm border border-danger/60 bg-danger/10 p-2 font-mono text-xs"
-                : "rounded-sm border border-hairline bg-bg p-2 font-mono text-xs"
+                ? "cursor-pointer rounded-sm border border-danger/60 bg-danger/10 p-2 font-mono text-xs hover:border-amber"
+                : "cursor-pointer rounded-sm border border-hairline bg-bg p-2 font-mono text-xs hover:border-amber"
             }
           >
             <div className="flex items-center justify-between gap-2">
@@ -174,7 +180,7 @@ export function TelemetryRail({ telemetry, spec, selectedPartId, onSelectPart }:
           ))}
         </div>
       )}
-      {activePart && <PartEvidenceSection part={activePart} sourceMap={sourceMap} crops={crops} onOpenCrop={setExpandedCrop} />}
+      {activePart && <PartEvidenceSection part={activePart} sourceMap={sourceMap} crops={crops} onOpenCrop={setExpandedCrop} onSelectPart={onSelectPart} />}
       {expandedCrop && (
         <div data-testid="image-evidence-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-bg/90 p-4">
           <div className="flex max-w-lg flex-col gap-3 rounded-sm border border-amber bg-panel p-4">
@@ -182,9 +188,7 @@ export function TelemetryRail({ telemetry, spec, selectedPartId, onSelectPart }:
               <span className="text-amber">Read by Gemini 4 Argon · {expandedCrop.source_id}</span>
               <Button size="sm" variant="outline" onClick={() => setExpandedCrop(null)}>Close</Button>
             </div>
-            <div className="relative border-2 border-amber">
-              <img src={expandedCrop.full_url ?? expandedCrop.crop_url} alt={expandedCrop.caption} className="max-h-80 w-full object-contain" />
-            </div>
+            <div className="relative border-2 border-amber"><img src={expandedCrop.full_url ?? expandedCrop.crop_url} alt={expandedCrop.caption} className="max-h-80 w-full object-contain" /></div>
             <p className="font-mono text-xs text-text">{expandedCrop.caption}</p>
           </div>
         </div>
