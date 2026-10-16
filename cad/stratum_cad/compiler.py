@@ -167,18 +167,8 @@ def compile_parts(parts: list[Part], *, run_id: str = "widget-a", revision: int 
     step_bytes, step_check = _export_and_verify_step(solids)
     glb_bytes, glb_check = _export_and_verify_glb(solids)
     checks: dict[str, CheckResult] = {
-        "valid_solid": CheckResult(
-            check_id="valid_solid",
-            passed=not invalid_ids,
-            part_ids=invalid_ids,
-            details=f"Invalid solids: {invalid_ids}. Ensure cuts do not self-intersect." if invalid_ids else "All solids valid",
-        ),
-        "nonzero_volume": CheckResult(
-            check_id="nonzero_volume",
-            passed=not zero_vol_ids,
-            part_ids=zero_vol_ids,
-            details=f"Zero-volume parts: {zero_vol_ids} (allowed volume: > 0.0 mm3). Reduce cut_box/cut_cylinder dimensions." if zero_vol_ids else "All volumes > 0",
-        ),
+        "valid_solid": CheckResult("valid_solid", not invalid_ids, part_ids=invalid_ids, details=f"Invalid solids: {invalid_ids}." if invalid_ids else "All solids valid"),
+        "nonzero_volume": CheckResult("nonzero_volume", not zero_vol_ids, part_ids=zero_vol_ids, details=f"Zero-volume parts: {zero_vol_ids}." if zero_vol_ids else "All volumes > 0"),
         "step_roundtrip": step_check,
         "glb_nodes_match": glb_check,
         "pairwise_interference": _check_pairwise_interference(solids),
@@ -201,4 +191,5 @@ def compile_parts(parts: list[Part], *, run_id: str = "widget-a", revision: int 
     )
     log_event("compile_parts_ok", run_id=run_id, stage="compile", part_count=len(parts))
     return CompileResult(step_bytes=step_bytes, glb_bytes=glb_bytes, manifest=manifest)
+
 
