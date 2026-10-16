@@ -1,0 +1,46 @@
+{
+  "run_id": "run-widget-a-001",
+  "revision": 0,
+  "model": "lumped_rc_v1",
+  "dt_s": 1.0,
+  "nodes": [
+    {
+      "node_id": "node_core-stage",
+      "part_id": "core-stage",
+      "role": "heat_source",
+      "peak_temp_C": 68.4,
+      "peak_rise_C": 43.4,
+      "t_peak_s": 540.0
+    },
+    {
+      "node_id": "node_storage-cell",
+      "part_id": "storage-cell",
+      "role": "energy_storage",
+      "peak_temp_C": 44.2,
+      "peak_rise_C": 19.2,
+      "t_peak_s": 600.0
+    },
+    {
+      "node_id": "node_outer-shell",
+      "part_id": "outer-shell",
+      "role": "enclosure",
+      "peak_temp_C": 38.5,
+      "peak_rise_C": 13.5,
+      "t_peak_s": 600.0
+    },
+    {
+      "node_id": "node_io-port",
+      "part_id": "io-port",
+      "role": "connector",
+      "peak_temp_C": 36.1,
+      "peak_rise_C": 11.1,
+      "t_peak_s": 580.0
+    }
+  ],
+  "storage_peak_rise_C": 19.2,
+  "series_uri": "runs/run-widget-a-001/rev_0/sim_series.json",
+  "assumptions": [
+    "Ambient temperature 25.0 C",
+    "Natural convection h = 8.0 W/(m2*K)"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "run_id": "run-widget-a-001",
+  "revision": 0,
+  "values": [
+    {
+      "metric_id": "peak_temp_C",
+      "value": 68.4,
+      "unit": "C",
+      "status": "computed",
+      "part_ids": ["core-stage"],
+      "note": "Baseline steady peak on heat_source"
+    },
+    {
+      "metric_id": "storage_peak_rise_C",
+      "value": 19.2,
+      "unit": "C",
+      "status": "computed",
+      "part_ids": ["storage-cell"],
+      "note": "Temperature rise on energy_storage above 25 C ambient"
+    },
+    {
+      "metric_id": "min_clearance_mm",
+      "value": 4.0,
+      "unit": "mm",
+      "status": "computed",
+      "part_ids": ["core-stage", "storage-cell"],
+      "note": "Gap between core-stage and storage-cell"
+    },
+    {
+      "metric_id": "total_volume_mm3",
+      "value": 24928.0,
+      "unit": "mm3",
+      "status": "computed",
+      "part_ids": ["outer-shell", "core-stage", "storage-cell", "io-port"],
+      "note": "Sum of part volumes"
+    }
+  ]
+}

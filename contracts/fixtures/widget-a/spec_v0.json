@@ -1,0 +1,202 @@
+{
+  "run_id": "run-widget-a-001",
+  "revision": 0,
+  "base_revision": null,
+  "product_title": "widget-a",
+  "summary": "Synthetic four-part assembly widget-a for contract verification.",
+  "parts": [
+    {
+      "part_id": "outer-shell",
+      "name": "Outer Shell",
+      "roles": ["enclosure", "user_contact_surface"],
+      "material": "polycarbonate",
+      "parameters": [
+        {
+          "name": "wall_thickness",
+          "value": 2.0,
+          "unit": "mm",
+          "status": "OBSERVED",
+          "basis_type": "source",
+          "source_ids": ["src-page-1"],
+          "basis_note": "Stated wall dimension"
+        },
+        {
+          "name": "thermal_conductivity",
+          "value": 0.2,
+          "unit": "W/(m*K)",
+          "status": "INFERRED",
+          "basis_type": "physics",
+          "source_ids": [],
+          "basis_note": "Standard polymer conductivity"
+        }
+      ],
+      "cad_ops": [
+        {
+          "op": "box",
+          "params": {
+            "length_mm": 80.0,
+            "width_mm": 50.0,
+            "height_mm": 20.0
+          },
+          "placement": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "rx": 0.0,
+            "ry": 0.0,
+            "rz": 0.0
+          }
+        },
+        {
+          "op": "shell",
+          "params": {
+            "thickness_mm": 2.0
+          },
+          "placement": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "rx": 0.0,
+            "ry": 0.0,
+            "rz": 0.0
+          }
+        }
+      ],
+      "layer": "surface"
+    },
+    {
+      "part_id": "core-stage",
+      "name": "Core Stage",
+      "roles": ["heat_source", "power_conversion"],
+      "material": "copper_fr4",
+      "parameters": [
+        {
+          "name": "power_dissipation",
+          "value": 4.5,
+          "unit": "W",
+          "status": "DOCUMENTED",
+          "basis_type": "source",
+          "source_ids": ["src-page-1"],
+          "basis_note": "Rated dissipation"
+        }
+      ],
+      "cad_ops": [
+        {
+          "op": "box",
+          "params": {
+            "length_mm": 24.0,
+            "width_mm": 20.0,
+            "height_mm": 4.0
+          },
+          "placement": {
+            "x": -12.0,
+            "y": 0.0,
+            "z": -2.0,
+            "rx": 0.0,
+            "ry": 0.0,
+            "rz": 0.0
+          }
+        }
+      ],
+      "layer": "kernel"
+    },
+    {
+      "part_id": "storage-cell",
+      "name": "Storage Cell",
+      "roles": ["energy_storage"],
+      "material": "layered_pouch",
+      "parameters": [
+        {
+          "name": "max_temp",
+          "value": 60.0,
+          "unit": "C",
+          "status": "DOCUMENTED",
+          "basis_type": "source",
+          "source_ids": ["src-page-1"],
+          "basis_note": "Rated ceiling"
+        },
+        {
+          "name": "clearance_to_heat_source",
+          "value": 4.0,
+          "unit": "mm",
+          "status": "INFERRED",
+          "basis_type": "model_prior",
+          "source_ids": [],
+          "basis_note": "Estimated internal layout gap"
+        }
+      ],
+      "cad_ops": [
+        {
+          "op": "rounded_box",
+          "params": {
+            "length_mm": 36.0,
+            "width_mm": 34.0,
+            "height_mm": 8.0,
+            "fillet_mm": 1.5
+          },
+          "placement": {
+            "x": 14.0,
+            "y": 0.0,
+            "z": 0.0,
+            "rx": 0.0,
+            "ry": 0.0,
+            "rz": 0.0
+          }
+        }
+      ],
+      "layer": "internal"
+    },
+    {
+      "part_id": "io-port",
+      "name": "IO Port",
+      "roles": ["connector"],
+      "material": "stainless_steel",
+      "parameters": [
+        {
+          "name": "current_rating",
+          "value": 2.0,
+          "unit": "A",
+          "status": "DOCUMENTED",
+          "basis_type": "source",
+          "source_ids": ["src-page-1"],
+          "basis_note": "Port specification"
+        }
+      ],
+      "cad_ops": [
+        {
+          "op": "box",
+          "params": {
+            "length_mm": 8.0,
+            "width_mm": 10.0,
+            "height_mm": 4.0
+          },
+          "placement": {
+            "x": -38.0,
+            "y": 0.0,
+            "z": -2.0,
+            "rx": 0.0,
+            "ry": 0.0,
+            "rz": 0.0
+          }
+        }
+      ],
+      "layer": "surface"
+    }
+  ],
+  "unknowns": [
+    "Internal convective transfer coefficient under sealed orientation"
+  ],
+  "sources": [
+    {
+      "source_id": "src-page-1",
+      "kind": "product_page",
+      "url": "https://example.invalid/widget-a",
+      "title": "widget-a specification",
+      "retrieved_at": "2026-10-16T00:00:00Z",
+      "excerpt": "widget-a outer dimensions 80x50x20 mm; primary core dissipates 4.5 W; storage cell rated 60 C max; port interface rated 5 V 2 A.",
+      "parent_source_id": null,
+      "image_uri": null,
+      "crop_box": null
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "run_id": "run-widget-a-001",
+  "created_at": "2026-10-16T00:00:00Z",
+  "status": "V0_READY",
+  "latest_revision": 0,
+  "orchestrator_model": "gemini-4-argon",
+  "model_label": "Gemini 4 Argon",
+  "deep_verify": false,
+  "inputs": {
+    "urls": ["https://example.invalid/widget-a"],
+    "attachment_ids": []
+  },
+  "usage": {
+    "context_tokens": 12400,
+    "output_tokens": 2150,
+    "sources": 1,
+    "images": 0,
+    "model_calls": 2
+  },
+  "objective": null,
+  "error": null
+}

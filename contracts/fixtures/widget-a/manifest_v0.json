@@ -1,0 +1,42 @@
+{
+  "run_id": "run-widget-a-001",
+  "revision": 0,
+  "parts": [
+    {
+      "part_id": "outer-shell",
+      "glb_node": "part_outer-shell",
+      "bbox_mm": [-40.0, -25.0, -10.0, 40.0, 25.0, 10.0],
+      "volume_mm3": 19360.0
+    },
+    {
+      "part_id": "core-stage",
+      "glb_node": "part_core-stage",
+      "bbox_mm": [-24.0, -10.0, -4.0, 0.0, 10.0, 0.0],
+      "volume_mm3": 1920.0
+    },
+    {
+      "part_id": "storage-cell",
+      "glb_node": "part_storage-cell",
+      "bbox_mm": [-4.0, -17.0, -4.0, 32.0, 17.0, 4.0],
+      "volume_mm3": 9760.0
+    },
+    {
+      "part_id": "io-port",
+      "glb_node": "part_io-port",
+      "bbox_mm": [-42.0, -5.0, -4.0, -34.0, 5.0, 0.0],
+      "volume_mm3": 320.0
+    }
+  ],
+  "checks": [
+    {
+      "check_id": "non_empty_volume",
+      "passed": true,
+      "detail": "All 4 parts have positive volume."
+    },
+    {
+      "check_id": "internal_clearance",
+      "passed": true,
+      "detail": "No unintended internal part overlaps detected."
+    }
+  ]
+}

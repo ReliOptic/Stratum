@@ -1,0 +1,16 @@
+runs/
+artifacts/
+.env
+.env.*
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+node_modules/
+web/node_modules/
+dist/
+web/dist/
+.DS_Store

@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+pythonpath = [".", "api", "cad", "bridge"]
+testpaths = ["api/tests", "cad/tests", "bridge/tests"]
+asyncio_mode = "auto"

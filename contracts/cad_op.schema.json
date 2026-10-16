@@ -1,0 +1,1675 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stratum.local/contracts/cad_op.schema.json",
+  "title": "CadOp",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "op",
+    "params",
+    "placement"
+  ],
+  "properties": {
+    "op": {
+      "$ref": "#/$defs/CadOpType"
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "placement": {
+      "$ref": "#/$defs/CadPlacement"
+    }
+  },
+  "$defs": {
+    "Revision": {
+      "title": "Revision",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "PartRole": {
+      "title": "PartRole",
+      "type": "string",
+      "enum": [
+        "heat_source",
+        "energy_storage",
+        "power_conversion",
+        "enclosure",
+        "structural_frame",
+        "thermal_spreader",
+        "user_contact_surface",
+        "connector",
+        "magnetic",
+        "fastener",
+        "moving_part",
+        "other"
+      ]
+    },
+    "EvidenceKind": {
+      "title": "EvidenceKind",
+      "type": "string",
+      "enum": [
+        "product_page",
+        "search_grounding",
+        "user_attachment",
+        "image",
+        "external_result"
+      ]
+    },
+    "ParameterStatus": {
+      "title": "ParameterStatus",
+      "type": "string",
+      "enum": [
+        "OBSERVED",
+        "DOCUMENTED",
+        "INFERRED",
+        "ASSUMED",
+        "UNKNOWN"
+      ]
+    },
+    "BasisType": {
+      "title": "BasisType",
+      "type": "string",
+      "enum": [
+        "source",
+        "physics",
+        "model_prior"
+      ]
+    },
+    "CadOpType": {
+      "title": "CadOpType",
+      "type": "string",
+      "enum": [
+        "box",
+        "rounded_box",
+        "cylinder",
+        "shell",
+        "cut_box",
+        "cut_cylinder"
+      ]
+    },
+    "PartLayer": {
+      "title": "PartLayer",
+      "type": "string",
+      "enum": [
+        "surface",
+        "internal",
+        "kernel"
+      ]
+    },
+    "CausalKind": {
+      "title": "CausalKind",
+      "type": "string",
+      "enum": [
+        "thermal",
+        "electrical",
+        "mechanical"
+      ]
+    },
+    "MetricStatus": {
+      "title": "MetricStatus",
+      "type": "string",
+      "enum": [
+        "computed",
+        "not_applicable",
+        "failed"
+      ]
+    },
+    "Comparator": {
+      "title": "Comparator",
+      "type": "string",
+      "enum": [
+        "lt",
+        "lte",
+        "gt",
+        "gte"
+      ]
+    },
+    "ExpectedDirection": {
+      "title": "ExpectedDirection",
+      "type": "string",
+      "enum": [
+        "decrease",
+        "increase",
+        "unchanged"
+      ]
+    },
+    "PassVerdict": {
+      "title": "PassVerdict",
+      "type": "string",
+      "enum": [
+        "improved",
+        "unchanged",
+        "regressed",
+        "blocked"
+      ]
+    },
+    "PredictionOutcome": {
+      "title": "PredictionOutcome",
+      "type": "string",
+      "enum": [
+        "confirmed",
+        "refuted",
+        "inconclusive"
+      ]
+    },
+    "SimModel": {
+      "title": "SimModel",
+      "type": "string",
+      "enum": [
+        "lumped_rc_v1"
+      ],
+      "default": "lumped_rc_v1"
+    },
+    "ExternalTool": {
+      "title": "ExternalTool",
+      "type": "string",
+      "enum": [
+        "simulink",
+        "measurement"
+      ]
+    },
+    "AuditStatus": {
+      "title": "AuditStatus",
+      "type": "string",
+      "enum": [
+        "match",
+        "mismatch",
+        "missing",
+        "not_applicable"
+      ]
+    },
+    "VariantId": {
+      "title": "VariantId",
+      "type": "string",
+      "enum": [
+        "alpha",
+        "beta",
+        "gamma"
+      ]
+    },
+    "EventStage": {
+      "title": "EventStage",
+      "type": "string",
+      "enum": [
+        "fetch",
+        "v0",
+        "verify",
+        "cad",
+        "graph",
+        "presets",
+        "objective",
+        "revision",
+        "sim",
+        "bridge",
+        "import"
+      ]
+    },
+    "EventLevel": {
+      "title": "EventLevel",
+      "type": "string",
+      "enum": [
+        "info",
+        "warn",
+        "error"
+      ]
+    },
+    "RunStatus": {
+      "title": "RunStatus",
+      "type": "string",
+      "enum": [
+        "V0_READY",
+        "PRESETS_READY",
+        "OBJECTIVE_CONFIRMED",
+        "REVISION_RUNNING",
+        "V1_READY",
+        "PARTIAL",
+        "BRIDGE_READY",
+        "EXTERNAL_RESULTS_IMPORTED",
+        "V2_READY",
+        "INPUTS_REQUIRED",
+        "FAILED"
+      ]
+    },
+    "EvidenceSource": {
+      "title": "EvidenceSource",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "kind",
+        "title",
+        "retrieved_at",
+        "excerpt"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/EvidenceKind"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "type": "string"
+        },
+        "retrieved_at": {
+          "type": "string"
+        },
+        "excerpt": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "parent_source_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "image_uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "crop_box": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      }
+    },
+    "Parameter": {
+      "title": "Parameter",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value",
+        "status",
+        "basis_type",
+        "source_ids",
+        "basis_note"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "$ref": "#/$defs/ParameterStatus"
+        },
+        "basis_type": {
+          "$ref": "#/$defs/BasisType"
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "basis_note": {
+          "type": "string"
+        }
+      }
+    },
+    "CadPlacement": {
+      "title": "CadPlacement",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "z",
+        "rx",
+        "ry",
+        "rz"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "default": 0.0
+        },
+        "y": {
+          "type": "number",
+          "default": 0.0
+        },
+        "z": {
+          "type": "number",
+          "default": 0.0
+        },
+        "rx": {
+          "type": "number",
+          "default": 0.0
+        },
+        "ry": {
+          "type": "number",
+          "default": 0.0
+        },
+        "rz": {
+          "type": "number",
+          "default": 0.0
+        }
+      }
+    },
+    "CadOp": {
+      "title": "CadOp",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op",
+        "params",
+        "placement"
+      ],
+      "properties": {
+        "op": {
+          "$ref": "#/$defs/CadOpType"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "placement": {
+          "$ref": "#/$defs/CadPlacement"
+        }
+      }
+    },
+    "Part": {
+      "title": "Part",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "part_id",
+        "name",
+        "roles",
+        "parameters",
+        "cad_ops",
+        "layer"
+      ],
+      "properties": {
+        "part_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[-_][a-z0-9]+)*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PartRole"
+          },
+          "minItems": 1
+        },
+        "material": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Parameter"
+          }
+        },
+        "cad_ops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CadOp"
+          }
+        },
+        "layer": {
+          "$ref": "#/$defs/PartLayer"
+        }
+      }
+    },
+    "EngineeringSpec": {
+      "title": "EngineeringSpec",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "revision",
+        "product_title",
+        "summary",
+        "parts",
+        "unknowns",
+        "sources"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "base_revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "product_title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Part"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceSource"
+          }
+        }
+      }
+    },
+    "CausalEdge": {
+      "title": "CausalEdge",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from_part",
+        "to_part",
+        "kind",
+        "mechanism",
+        "strength",
+        "source_ids"
+      ],
+      "properties": {
+        "from_part": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_part": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/CausalKind"
+        },
+        "mechanism": {
+          "type": "string"
+        },
+        "strength": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ComponentGraph": {
+      "title": "ComponentGraph",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "revision",
+        "edges"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CausalEdge"
+          }
+        }
+      }
+    },
+    "MetricValue": {
+      "title": "MetricValue",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_id",
+        "status",
+        "part_ids",
+        "note"
+      ],
+      "properties": {
+        "metric_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "$ref": "#/$defs/MetricStatus"
+        },
+        "part_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "MetricSet": {
+      "title": "MetricSet",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "revision",
+        "values"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MetricValue"
+          }
+        }
+      }
+    },
+    "ManifestPart": {
+      "title": "ManifestPart",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "part_id",
+        "glb_node",
+        "bbox_mm",
+        "volume_mm3"
+      ],
+      "properties": {
+        "part_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "glb_node": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bbox_mm": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 6,
+          "maxItems": 6
+        },
+        "volume_mm3": {
+          "type": "number"
+        }
+      }
+    },
+    "ManifestCheck": {
+      "title": "ManifestCheck",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "passed",
+        "detail"
+      ],
+      "properties": {
+        "check_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "Manifest": {
+      "title": "Manifest",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "revision",
+        "parts",
+        "checks"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ManifestPart"
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ManifestCheck"
+          }
+        }
+      }
+    },
+    "Target": {
+      "title": "Target",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_id",
+        "comparator",
+        "threshold"
+      ],
+      "properties": {
+        "metric_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "comparator": {
+          "$ref": "#/$defs/Comparator"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      }
+    },
+    "Preset": {
+      "title": "Preset",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preset_id",
+        "title",
+        "rationale",
+        "source_ids",
+        "targets"
+      ],
+      "properties": {
+        "preset_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          }
+        }
+      }
+    },
+    "Objective": {
+      "title": "Objective",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "targets",
+        "base_revision",
+        "objective_hash"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          }
+        },
+        "base_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "objective_hash": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ConfirmResponse": {
+      "title": "ConfirmResponse",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token",
+        "expires_at"
+      ],
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expires_at": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Prediction": {
+      "title": "Prediction",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_id",
+        "expected_direction",
+        "falsified_if",
+        "registered_at"
+      ],
+      "properties": {
+        "metric_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_direction": {
+          "$ref": "#/$defs/ExpectedDirection"
+        },
+        "expected_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "falsified_if": {
+          "type": "string"
+        },
+        "registered_at": {
+          "type": "string"
+        }
+      }
+    },
+    "MetricDelta": {
+      "title": "MetricDelta",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_id"
+      ],
+      "properties": {
+        "metric_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      }
+    },
+    "PassReport": {
+      "title": "PassReport",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "part_id",
+        "pass_no",
+        "action",
+        "prediction",
+        "metric_deltas",
+        "verdict",
+        "outcome",
+        "suspicious",
+        "fitted_adjustment",
+        "at"
+      ],
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "part_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pass_no": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "action": {
+          "type": "string"
+        },
+        "prediction": {
+          "$ref": "#/$defs/Prediction"
+        },
+        "metric_deltas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MetricDelta"
+          }
+        },
+        "verdict": {
+          "$ref": "#/$defs/PassVerdict"
+        },
+        "outcome": {
+          "$ref": "#/$defs/PredictionOutcome"
+        },
+        "external_outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PredictionOutcome"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "suspicious": {
+          "type": "boolean"
+        },
+        "suspicious_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fitted_adjustment": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "string"
+        }
+      }
+    },
+    "SimNode": {
+      "title": "SimNode",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "part_id",
+        "role",
+        "peak_temp_C",
+        "peak_rise_C",
+        "t_peak_s"
+      ],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "part_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "$ref": "#/$defs/PartRole"
+        },
+        "peak_temp_C": {
+          "type": "number"
+        },
+        "peak_rise_C": {
+          "type": "number"
+        },
+        "t_peak_s": {
+          "type": "number"
+        }
+      }
+    },
+    "SimResult": {
+      "title": "SimResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "revision",
+        "model",
+        "dt_s",
+        "nodes",
+        "series_uri",
+        "assumptions"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "model": {
+          "$ref": "#/$defs/SimModel"
+        },
+        "dt_s": {
+          "type": "number"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SimNode"
+          }
+        },
+        "storage_peak_rise_C": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "series_uri": {
+          "type": "string"
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ExternalSimNode": {
+      "title": "ExternalSimNode",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "part_id",
+        "peak_temp_C",
+        "peak_rise_C",
+        "t_peak_s"
+      ],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "part_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "peak_temp_C": {
+          "type": "number"
+        },
+        "peak_rise_C": {
+          "type": "number"
+        },
+        "t_peak_s": {
+          "type": "number"
+        }
+      }
+    },
+    "ExternalSimResult": {
+      "title": "ExternalSimResult",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "revision",
+        "tool",
+        "audit",
+        "nodes",
+        "imported_at",
+        "source_id"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "tool": {
+          "$ref": "#/$defs/ExternalTool"
+        },
+        "bundle_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "audit": {
+          "$ref": "#/$defs/AuditStatus"
+        },
+        "max_abs_diff_C": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExternalSimNode"
+          }
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "instrument": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "imported_at": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "RunStats": {
+      "title": "RunStats",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "orchestrator_model",
+        "predictions_total",
+        "confirmed",
+        "refuted",
+        "inconclusive",
+        "external_confirmed",
+        "external_refuted",
+        "evidence_status_counts",
+        "downgrades",
+        "context_tokens",
+        "wall_time_s"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "orchestrator_model": {
+          "type": "string"
+        },
+        "predictions_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confirmed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refuted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inconclusive": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "external_confirmed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "external_refuted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence_status_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "downgrades": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "context_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wall_time_s": {
+          "type": "number",
+          "minimum": 0.0
+        }
+      }
+    },
+    "BenchmarkComparison": {
+      "title": "BenchmarkComparison",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_key",
+        "runs"
+      ],
+      "properties": {
+        "input_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RunStats"
+          }
+        }
+      }
+    },
+    "Variant": {
+      "title": "Variant",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "variant_id",
+        "summary",
+        "weights",
+        "primary"
+      ],
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "variant_id": {
+          "$ref": "#/$defs/VariantId"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "weights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "primary": {
+          "type": "boolean"
+        }
+      }
+    },
+    "RunEvent": {
+      "title": "RunEvent",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seq",
+        "run_id",
+        "at",
+        "stage",
+        "level",
+        "message",
+        "data"
+      ],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/EventStage"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "part_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "level": {
+          "$ref": "#/$defs/EventLevel"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "UsageStat": {
+      "title": "UsageStat",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context_tokens",
+        "output_tokens",
+        "sources",
+        "images",
+        "model_calls"
+      ],
+      "properties": {
+        "context_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sources": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "images": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_calls": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "SandboxCheck": {
+      "title": "SandboxCheck",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "agent_id",
+        "code_summary",
+        "results",
+        "agrees_with_metrics",
+        "notes",
+        "at"
+      ],
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code_summary": {
+          "type": "string"
+        },
+        "results": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "agrees_with_metrics": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "notes": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      }
+    },
+    "RunInputs": {
+      "title": "RunInputs",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "urls",
+        "attachment_ids"
+      ],
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "attachment_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Run": {
+      "title": "Run",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "created_at",
+        "status",
+        "latest_revision",
+        "orchestrator_model",
+        "model_label",
+        "deep_verify",
+        "inputs",
+        "usage"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        },
+        "latest_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "orchestrator_model": {
+          "type": "string"
+        },
+        "model_label": {
+          "type": "string"
+        },
+        "deep_verify": {
+          "type": "boolean"
+        },
+        "inputs": {
+          "$ref": "#/$defs/RunInputs"
+        },
+        "usage": {
+          "$ref": "#/$defs/UsageStat"
+        },
+        "objective": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Objective"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      }
+    }
+  }
+}

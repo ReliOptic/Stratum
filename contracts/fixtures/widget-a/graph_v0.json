@@ -1,0 +1,22 @@
+{
+  "run_id": "run-widget-a-001",
+  "revision": 0,
+  "edges": [
+    {
+      "from_part": "core-stage",
+      "to_part": "storage-cell",
+      "kind": "thermal",
+      "mechanism": "Conductive and radiative heat transfer across internal gap",
+      "strength": 0.78,
+      "source_ids": ["src-page-1"]
+    },
+    {
+      "from_part": "io-port",
+      "to_part": "core-stage",
+      "kind": "electrical",
+      "mechanism": "Direct DC input feed to core stage",
+      "strength": 0.92,
+      "source_ids": ["src-page-1"]
+    }
+  ]
+}
