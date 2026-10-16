@@ -181,40 +181,61 @@ def run_causal_and_presets(
     return graph, presets, in_tok, out_tok
 
 
+# Safety direction per catalog metric: True = larger is safer, False = smaller is safer.
+SAFER_DIRECTION: dict[str, bool] = {
+    "min_gap_heat_to_storage_mm": True,
+    "min_enclosure_wall_mm": True,
+    "heat_path_to_exterior_mm": False,
+    "vent_open_area_mm2": True,
+    "spreader_coverage_ratio": True,
+    "peak_storage_temp_rise_C": False,
+    "assembly_mass_g": False,
+}
+
+
+def _safe_target(metric_id: str, value: float, unit: str | None, margin: float) -> Target:
+    """Build a target that always points in the safer direction for the metric."""
+    if SAFER_DIRECTION.get(metric_id, False):
+        return Target(metric_id=metric_id, comparator=Comparator.gte, threshold=round(value * (1 + margin), 2), unit=unit)
+    return Target(metric_id=metric_id, comparator=Comparator.lte, threshold=round(value * (1 - margin), 2), unit=unit)
+
+
+def _pick(computed: dict[str, tuple[float | None, str | None]], prefs: list[str]) -> str:
+    for metric_id in prefs:
+        if metric_id in computed:
+            return metric_id
+    return next(iter(computed), "assembly_mass_g")
+
+
 def _build_validated_presets(metrics: MetricSet, source_ids: list[str]) -> list[Preset]:
-    """Build 3 role-driven Presets referencing only computed metric_ids in MetricSet."""
+    """Build 3 presets from computed metrics, each target pointing in the safer direction."""
     computed = {
         mv.metric_id: (mv.value, mv.unit)
         for mv in metrics.values
         if mv.status == MetricStatus.computed and mv.value is not None
     }
-    m_ids = list(computed.keys()) or ["total_mass_g"]
-    m0 = m_ids[0]
-    m1 = m_ids[min(1, len(m_ids) - 1)]
-    v0, u0 = computed.get(m0, (100.0, "g"))
-    v1, u1 = computed.get(m1, (10.0, "mm"))
-    val0 = float(v0 or 100.0)
-    val1 = float(v1 or 10.0)
-    return [
-        Preset(
-            preset_id="thermal_safety_margin",
-            title="Thermal & Storage Isolation Margin",
-            rationale="Maximize thermal dissipation path and reduce heat rise at sensitive storage/contact nodes.",
-            source_ids=source_ids,
-            targets=[Target(metric_id=m0, comparator=Comparator.lte, threshold=round(val0 * 0.95, 2), unit=u0)],
-        ),
-        Preset(
-            preset_id="enclosure_structural_integrity",
-            title="Structural & Wall Integrity",
-            rationale="Preserve wall thickness and structural clearance while maintaining thermal envelope.",
-            source_ids=source_ids,
-            targets=[Target(metric_id=m1, comparator=Comparator.gte, threshold=round(val1 * 1.05, 2), unit=u1)],
-        ),
-        Preset(
-            preset_id="compact_efficiency_balance",
-            title="Balanced Mass & Thermal Envelope",
-            rationale="Balance overall assembly mass and envelope volume against thermal coupling limits.",
-            source_ids=source_ids,
-            targets=[Target(metric_id=m0, comparator=Comparator.lte, threshold=round(val0 * 0.98, 2), unit=u0)],
-        ),
+    plans = [
+        ("thermal_safety_margin", "Thermal & Storage Isolation Margin",
+         "Reduce heat rise at the energy storage part and keep heat sources away from it.",
+         ["peak_storage_temp_rise_C", "min_gap_heat_to_storage_mm"], 0.05),
+        ("enclosure_structural_integrity", "Structural & Wall Integrity",
+         "Keep enclosure walls thick enough while preserving the thermal envelope.",
+         ["min_enclosure_wall_mm", "min_gap_heat_to_storage_mm"], 0.05),
+        ("compact_efficiency_balance", "Heat Path to Exterior",
+         "Shorten the path heat must travel before it leaves the device, without adding mass.",
+         ["heat_path_to_exterior_mm", "spreader_coverage_ratio", "peak_storage_temp_rise_C"], 0.05),
     ]
+    presets: list[Preset] = []
+    for preset_id, title, rationale, prefs, margin in plans:
+        metric_id = _pick(computed, prefs)
+        value, unit = computed.get(metric_id, (100.0, "g"))
+        presets.append(
+            Preset(
+                preset_id=preset_id,
+                title=title,
+                rationale=rationale,
+                source_ids=source_ids,
+                targets=[_safe_target(metric_id, float(value or 1.0), unit, margin)],
+            )
+        )
+    return presets
