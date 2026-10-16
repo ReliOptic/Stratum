@@ -21,11 +21,11 @@ export function OnboardingHeader({
       data-testid="onboarding-header"
       data-docked={docked ? "true" : "false"}
       className={cn(
-        "pointer-events-auto z-20 flex items-center justify-between border-b border-hairline bg-panel/90 px-4 py-2.5 transition-all duration-500",
+        "pointer-events-auto z-20 flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-panel/90 px-4 py-2.5 transition-all duration-500",
         docked ? "w-full" : "mx-auto mt-6 w-11/12 max-w-3xl rounded-sm border",
       )}
     >
-      <div className="flex items-baseline gap-3">
+      <div className="flex flex-wrap items-baseline gap-2">
         <h1 className="font-mono text-base font-bold tracking-wider text-amber uppercase">
           Stratum
         </h1>
@@ -33,7 +33,7 @@ export function OnboardingHeader({
           Total Elements layer for Baltam
         </span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         {runId && (
           <Badge variant="dim" data-testid="active-run-id">
             RUN {runId}

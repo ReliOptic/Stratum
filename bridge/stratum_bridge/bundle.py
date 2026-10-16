@@ -7,8 +7,10 @@ import io
 import zipfile
 from typing import Any
 
+from stratum_bridge.adapters import adapt_metric_set, adapt_sim_result
 from stratum_bridge.logging_utils import log_event
 from stratum_bridge.matlab_gen import generate_experiment_script
+from stratum_cad.adapters import adapt_manifest, adapt_spec
 from stratum_cad.rc_network import RCNetwork, build_rc_network, generate_stress_scenario
 from stratum_cad.types import EngineeringSpec, Manifest, MetricSet, SimResult
 
@@ -129,26 +131,19 @@ def _format_handoff_spec(
 
 
 def build_bundle(
-    run: str | Any,
-    base: EngineeringSpec,
-    new: EngineeringSpec,
-    m_base: MetricSet,
-    m_new: MetricSet,
-    sim_base: SimResult,
-    sim_new: SimResult,
-    graph: Any,
-    step_base: bytes,
-    step_new: bytes,
-    *,
-    manifest_base: Manifest | None = None,
-    manifest_new: Manifest | None = None,
+    run: str | Any, base: EngineeringSpec | Any, new: EngineeringSpec | Any,
+    m_base: MetricSet | Any, m_new: MetricSet | Any, sim_base: SimResult | Any, sim_new: SimResult | Any,
+    graph: Any, step_base: bytes, step_new: bytes, *,
+    manifest_base: Manifest | Any | None = None, manifest_new: Manifest | Any | None = None,
 ) -> bytes:
     """Build deterministic MATLAB/Simulink handoff ZIP bundle for any adjacent revisions."""
+    base, new = adapt_spec(base), adapt_spec(new)
+    m_base, m_new = adapt_metric_set(m_base), adapt_metric_set(m_new)
     run_id = run if isinstance(run, str) else str(getattr(run, "run_id", base.run_id))
-    man_b = manifest_base or Manifest(parts=[], checks={}, step_sha256="", glb_sha256="", run_id=run_id, revision=base.revision)
-    man_n = manifest_new or Manifest(parts=[], checks={}, step_sha256="", glb_sha256="", run_id=run_id, revision=new.revision)
-    net_base = build_rc_network(base, man_b)
-    net_new = build_rc_network(new, man_n)
+    man_b = adapt_manifest(manifest_base, base) if manifest_base is not None else Manifest(parts=[], checks={}, step_sha256="", glb_sha256="", run_id=run_id, revision=base.revision)
+    man_n = adapt_manifest(manifest_new, new) if manifest_new is not None else Manifest(parts=[], checks={}, step_sha256="", glb_sha256="", run_id=run_id, revision=new.revision)
+    sim_base, sim_new = adapt_sim_result(sim_base, base, man_b), adapt_sim_result(sim_new, new, man_n)
+    net_base, net_new = build_rc_network(base, man_b), build_rc_network(new, man_n)
 
     members: dict[str, bytes] = {
         "agent_handoff_spec.txt": _format_handoff_spec(run_id, net_base, net_new, m_base, m_new, graph).encode("utf-8"),
@@ -163,18 +158,9 @@ def build_bundle(
             "Run `run_stratum_experiment` in MATLAB or use `stratum.m` in MATLAB Online.\n"
         ).encode("utf-8"),
     }
-
-    member_hashes = [
-        f"{name}={hashlib.sha256(data).hexdigest()}" for name, data in sorted(members.items())
-    ]
+    member_hashes = [f"{name}={hashlib.sha256(data).hexdigest()}" for name, data in sorted(members.items())]
     tree_hash = hashlib.sha256("\n".join(member_hashes).encode("utf-8")).hexdigest()
-    manifest_lines = [
-        f"run_id={run_id}",
-        f"base_revision={base.revision}",
-        f"new_revision={new.revision}",
-        f"bundle_sha256={tree_hash}",
-        *member_hashes,
-    ]
+    manifest_lines = [f"run_id={run_id}", f"base_revision={base.revision}", f"new_revision={new.revision}", f"bundle_sha256={tree_hash}", *member_hashes]
     members["bundle_manifest.txt"] = ("\n".join(manifest_lines) + "\n").encode("utf-8")
 
     buf = io.BytesIO()
@@ -185,12 +171,7 @@ def build_bundle(
             zf.writestr(info, members[name])
     zip_bytes = buf.getvalue()
     log_event(
-        "build_bundle_ok",
-        run_id=run_id,
-        stage="bridge",
-        base_revision=base.revision,
-        new_revision=new.revision,
-        bundle_sha256=hashlib.sha256(zip_bytes).hexdigest(),
-        content_sha256=tree_hash,
+        "build_bundle_ok", run_id=run_id, stage="bridge", base_revision=base.revision,
+        new_revision=new.revision, bundle_sha256=hashlib.sha256(zip_bytes).hexdigest(), content_sha256=tree_hash,
     )
     return zip_bytes

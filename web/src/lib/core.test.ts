@@ -54,12 +54,16 @@ describe("config and utils", () => {
 });
 
 describe("BaltamPlanet ASCII raymarcher", () => {
-  it("renders deterministic ASCII strata rows and disperses particles near cursor", () => {
-    const base = renderAsciiPlanetFrame(0.5);
-    expect(base.length).toBe(18);
-    expect(base[9]?.text.trim().length).toBeGreaterThan(0);
+  it("renders deterministic rotating strata bands and radial particle dispersion", () => {
+    const frameA = renderAsciiPlanetFrame(0.2);
+    const frameB = renderAsciiPlanetFrame(1.4);
+    expect(frameA.length).toBe(18);
+    expect(frameA.map((r) => r.text).join("\n")).not.toBe(frameB.map((r) => r.text).join("\n"));
+    const bands = new Set(frameA.map((r) => r.bandKind));
+    expect(bands.size).toBeGreaterThanOrEqual(2);
 
-    const dispersed = renderAsciiPlanetFrame(0.5, 0.0, 0.0);
-    expect(dispersed[9]?.text).not.toBe(base[9]?.text);
+    const dispersed = renderAsciiPlanetFrame(0.2, 0.0, 0.0);
+    expect(dispersed[9]?.text).not.toBe(frameA[9]?.text);
   });
 });
+

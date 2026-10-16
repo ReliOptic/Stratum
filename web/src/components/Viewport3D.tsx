@@ -1,91 +1,28 @@
-import { Line, OrbitControls } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
 import * as React from "react";
 import { Badge } from "@/components/ui/badge";
-import type { CadManifest, CausalEdge, CouplingKind, ManifestNode } from "@/lib/contracts";
-import { computeExplodedPosition } from "@/lib/state";
+import { fetchArtifactGlbBuffer } from "@/lib/api";
+import type { CausalEdge, CausalKind, Manifest } from "@/lib/contracts";
+import {
+  computeAssemblyCentroidMm,
+  computeExplodedPosition,
+  mapManifestToPartByNode,
+  parseGlbNodeNames,
+} from "@/lib/state";
 
-const EDGE_COLOR_HEX: Readonly<Record<CouplingKind, string>> = {
+const EDGE_COLOR_HEX: Readonly<Record<CausalKind, string>> = {
   thermal: "#F2A33A",
   electrical: "#4CC9F0",
   mechanical: "#B8A44C",
 };
 
-interface SceneNodesProps {
-  readonly nodes: readonly ManifestNode[];
-  readonly edges: readonly CausalEdge[];
-  readonly explodeFactor: number;
-  readonly selectedPartId: string | null;
-  readonly onSelectPart: (partId: string) => void;
-}
-
-function SceneNodes({
-  nodes,
-  edges,
-  explodeFactor,
-  selectedPartId,
-  onSelectPart,
-}: SceneNodesProps): React.JSX.Element {
-  const posByPart = React.useMemo(() => {
-    const map: Record<string, readonly [number, number, number]> = {};
-    for (const n of nodes) {
-      map[n.part_id] = computeExplodedPosition(n, explodeFactor);
-    }
-    return map;
-  }, [nodes, explodeFactor]);
-
-  return (
-    <group>
-      <ambientLight intensity={0.65} />
-      <directionalLight position={[4, 6, 4]} intensity={1.1} />
-      {nodes.map((node) => {
-        const pos = posByPart[node.part_id] ?? node.center;
-        const isSelected = selectedPartId === node.part_id;
-        const ghost = !isSelected && selectedPartId !== null;
-        return (
-          <mesh
-            key={node.node_name}
-            position={[pos[0], pos[1], pos[2]]}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectPart(node.part_id);
-            }}
-          >
-            <boxGeometry args={[0.75, 0.5, 0.75]} />
-            <meshStandardMaterial
-              color={isSelected ? "#F2A33A" : "#7B8594"}
-              wireframe={ghost}
-              transparent={ghost}
-              opacity={ghost ? 0.15 : 0.92}
-            />
-          </mesh>
-        );
-      })}
-      {edges.map((edge) => {
-        const from = posByPart[edge.from_part_id];
-        const to = posByPart[edge.to_part_id];
-        if (!from || !to) return null;
-        const mid: [number, number, number] = [
-          (from[0] + to[0]) / 2,
-          Math.max(from[1], to[1]) + 0.45,
-          (from[2] + to[2]) / 2,
-        ];
-        return (
-          <Line
-            key={edge.edge_id}
-            points={[[from[0], from[1], from[2]], mid, [to[0], to[1], to[2]]]}
-            color={EDGE_COLOR_HEX[edge.kind]}
-            lineWidth={2}
-          />
-        );
-      })}
-      <OrbitControls makeDefault enablePan enableZoom />
-    </group>
-  );
-}
+const LazyViewportCanvas = React.lazy(async () => {
+  const mod = await import("@/components/ViewportCanvas");
+  return { default: mod.ViewportCanvas };
+});
 
 export interface Viewport3DProps {
-  readonly manifest: CadManifest | null;
+  readonly runId?: string | null;
+  readonly manifest: Manifest | null;
   readonly edges: readonly CausalEdge[];
   readonly selectedPartId: string | null;
   readonly onSelectPart: (partId: string) => void;
@@ -103,6 +40,7 @@ export function canCreateWebGLContext(): boolean {
 }
 
 export function Viewport3D({
+  runId = null,
   manifest,
   edges,
   selectedPartId,
@@ -111,37 +49,70 @@ export function Viewport3D({
 }: Viewport3DProps): React.JSX.Element {
   const [explode, setExplode] = React.useState<number>(0);
   const [hoveredEdge, setHoveredEdge] = React.useState<CausalEdge | null>(null);
+  const [glbBuffer, setGlbBuffer] = React.useState<ArrayBuffer | null>(null);
+  const [loadedGlbRev, setLoadedGlbRev] = React.useState<number | null>(null);
+  const [glbNodeNames, setGlbNodeNames] = React.useState<readonly string[]>([]);
+
   const webglAvailable = React.useMemo(() => canCreateWebGLContext(), []);
-  const nodes = manifest?.nodes ?? [];
+  const parts = manifest?.parts ?? [];
+  const nodeMap = React.useMemo(() => mapManifestToPartByNode(manifest), [manifest]);
+  const centroid = React.useMemo(() => computeAssemblyCentroidMm(parts), [parts]);
+
+  React.useEffect(() => {
+    const targetRunId = runId ?? manifest?.run_id ?? null;
+    if (!targetRunId || parts.length === 0) return;
+    let cancelled = false;
+    void fetchArtifactGlbBuffer(targetRunId, activeRevision).then((buf) => {
+      if (cancelled || !buf) return;
+      setGlbBuffer(buf);
+      setLoadedGlbRev(activeRevision);
+      setGlbNodeNames(parseGlbNodeNames(buf));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, manifest?.run_id, activeRevision, parts.length]);
 
   return (
     <section
       data-testid="viewport-3d"
+      data-active-part={selectedPartId ?? "none"}
+      data-glb-rev={loadedGlbRev !== null ? String(loadedGlbRev) : "none"}
+      data-glb-nodes={glbNodeNames.join(",")}
+      data-mapped-parts={Object.keys(nodeMap).length}
       aria-label="3D Engineering Viewport"
       className="relative h-full w-full overflow-hidden bg-bg"
     >
-      {webglAvailable && nodes.length > 0 ? (
-        <Canvas camera={{ position: [2.8, 2.2, 2.8], fov: 45 }}>
-          <SceneNodes
-            nodes={nodes}
+      {webglAvailable && parts.length > 0 ? (
+        <React.Suspense
+          fallback={
+            <div className="flex h-full w-full items-center justify-center font-mono text-xs text-dim">
+              INITIALIZING 3D VIEWPORT · V{activeRevision}
+            </div>
+          }
+        >
+          <LazyViewportCanvas
+            parts={parts}
             edges={edges}
             explodeFactor={explode}
             selectedPartId={selectedPartId}
             onSelectPart={onSelectPart}
+            onHoverEdge={setHoveredEdge}
+            glbBuffer={glbBuffer}
           />
-        </Canvas>
+        </React.Suspense>
       ) : (
         <div className="flex h-full w-full items-center justify-center font-mono text-xs text-dim">
-          {nodes.length > 0
-            ? `CAD MANIFEST LOADED · V${activeRevision} (${nodes.length} NODES)`
+          {parts.length > 0
+            ? `CAD MANIFEST LOADED · V${activeRevision} (${parts.length} PARTS)`
             : "AWAITING RECONSTRUCTION MANIFEST"}
         </div>
       )}
-      {nodes.length > 0 && (
+      {parts.length > 0 && (
         <div className="pointer-events-auto absolute top-16 left-4 flex flex-col gap-2 rounded-sm border border-hairline bg-panel/90 p-3">
           <div className="flex items-center justify-between gap-4 font-mono text-xs text-dim">
             <span>EXPLODED VIEW · V{activeRevision}</span>
-            <span className="text-amber">{Math.round(explode * 100)}%</span>
+            <span data-testid="explode-percent" className="text-amber">{Math.round(explode * 100)}%</span>
           </div>
           <input
             data-testid="explode-slider"
@@ -155,35 +126,49 @@ export function Viewport3D({
             className="w-44 accent-amber"
           />
           <div className="flex flex-wrap gap-1.5 pt-1">
-            {nodes.map((n) => (
-              <button
-                key={n.node_name}
-                type="button"
-                data-testid={`viewport-node-${n.part_id}`}
-                onClick={() => onSelectPart(n.part_id)}
-                className={
-                  selectedPartId === n.part_id
-                    ? "rounded-sm border border-amber bg-amber/20 px-2 py-0.5 font-mono text-xs text-amber"
-                    : "rounded-sm border border-hairline bg-bg px-2 py-0.5 font-mono text-xs text-dim hover:text-text"
-                }
-              >
-                {n.part_id}
-              </button>
-            ))}
+            {parts.map((p) => {
+              const isSelected = selectedPartId === p.part_id;
+              const ghost = !isSelected && selectedPartId !== null;
+              const [ox, oy, oz] = computeExplodedPosition(p, explode, centroid);
+              return (
+                <button
+                  key={p.glb_node}
+                  type="button"
+                  data-testid={`viewport-node-${p.part_id}`}
+                  data-glb-node={p.glb_node}
+                  data-visual-state={isSelected ? "active-amber" : ghost ? "xray-ghost-15" : "default"}
+                  data-offset-mm={`${ox.toFixed(1)},${oy.toFixed(1)},${oz.toFixed(1)}`}
+                  onClick={() => onSelectPart(p.part_id)}
+                  className={
+                    isSelected
+                      ? "rounded-sm border border-amber bg-amber/20 px-2 py-0.5 font-mono text-xs text-amber"
+                      : ghost
+                        ? "rounded-sm border border-hairline bg-bg/40 px-2 py-0.5 font-mono text-xs text-dim opacity-60 hover:opacity-100"
+                        : "rounded-sm border border-hairline bg-bg px-2 py-0.5 font-mono text-xs text-dim hover:text-text"
+                  }
+                >
+                  {p.part_id}
+                </button>
+              );
+            })}
           </div>
           {edges.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-1">
-              {edges.map((edge) => (
+              {edges.map((edge, idx) => (
                 <button
-                  key={edge.edge_id}
+                  key={`${edge.from_part}-${edge.to_part}-${idx}`}
                   type="button"
-                  data-testid={`causal-spline-${edge.edge_id}`}
+                  data-testid={`causal-spline-${edge.from_part}-${edge.to_part}`}
+                  data-edge-kind={edge.kind}
+                  data-edge-color={EDGE_COLOR_HEX[edge.kind]}
                   onMouseEnter={() => setHoveredEdge(edge)}
                   onMouseLeave={() => setHoveredEdge(null)}
                   onFocus={() => setHoveredEdge(edge)}
-                  className="rounded-sm border border-hairline bg-bg px-1.5 py-0.5 font-mono text-xs text-dim hover:border-amber"
+                  onClick={() => setHoveredEdge(edge)}
+                  className="flex items-center gap-1 rounded-sm border border-hairline bg-bg px-1.5 py-0.5 font-mono text-xs text-dim hover:border-amber"
                 >
-                  {edge.from_part_id}→{edge.to_part_id}
+                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: EDGE_COLOR_HEX[edge.kind] }} />
+                  <span>{edge.from_part}→{edge.to_part}</span>
                 </button>
               ))}
             </div>
@@ -191,9 +176,7 @@ export function Viewport3D({
           {hoveredEdge && (
             <div data-testid="spline-tooltip" className="rounded-sm border border-amber/50 bg-bg p-2 font-mono text-xs text-text">
               <div className="flex items-center gap-2">
-                <Badge variant={hoveredEdge.kind === "thermal" ? "amber" : hoveredEdge.kind === "electrical" ? "cyan" : "olive"}>
-                  {hoveredEdge.kind}
-                </Badge>
+                <Badge variant={hoveredEdge.kind === "thermal" ? "amber" : hoveredEdge.kind === "electrical" ? "cyan" : "olive"}>{hoveredEdge.kind}</Badge>
                 <span>{hoveredEdge.mechanism}</span>
               </div>
               <div className="mt-1 text-dim">Sources: {hoveredEdge.source_ids.join(", ") || "physics"}</div>

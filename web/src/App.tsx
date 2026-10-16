@@ -13,7 +13,7 @@ export function App(): React.JSX.Element {
   const docked = ctrl.runId !== null;
 
   return (
-    <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-bg text-text">
+    <div className="relative flex min-h-screen w-screen flex-col overflow-x-hidden overflow-y-auto bg-bg text-text md:h-screen md:overflow-hidden">
       <OnboardingHeader
         docked={docked}
         runId={ctrl.runId}
@@ -22,8 +22,9 @@ export function App(): React.JSX.Element {
       />
 
       <main className="relative flex min-h-0 flex-1 flex-col md:flex-row">
-        <div className="relative min-h-0 flex-1">
+        <div className="relative h-64 shrink-0 md:h-auto md:min-h-0 md:flex-1 md:shrink">
           <Viewport3D
+            runId={ctrl.runId}
             manifest={ctrl.bundle.manifest}
             edges={ctrl.bundle.graph?.edges ?? []}
             selectedPartId={ctrl.selectedPartId}
@@ -43,17 +44,20 @@ export function App(): React.JSX.Element {
 
         <TelemetryRail
           telemetry={ctrl.telemetry}
-          graph={ctrl.bundle.graph}
+          spec={ctrl.bundle.spec}
           selectedPartId={ctrl.selectedPartId}
           onSelectPart={ctrl.setSelectedPartId}
         />
       </main>
 
       <ControlDeck
+        runStatus={ctrl.telemetry.status}
         presets={ctrl.bundle.presets}
         objectiveDraft={ctrl.objectiveDraft}
         onUpdateDraftText={ctrl.updateDraft}
-        onRequestConfirmObjective={() => void ctrl.confirmCurrentObjective()}
+        onSelectPreset={(p) => void ctrl.selectPreset(p)}
+        onReviewObjective={() => void ctrl.reviewCurrentObjective()}
+        onConfirmObjective={() => void ctrl.confirmReviewedObjective()}
         onExecuteRevision={() => void ctrl.executeRevision()}
         loopNodes={ctrl.bundle.loopNodes}
         latestRevision={ctrl.telemetry.latestRevision}
@@ -62,7 +66,10 @@ export function App(): React.JSX.Element {
         variants={ctrl.bundle.variants}
         passes={ctrl.bundle.passes}
         metrics={ctrl.bundle.metrics}
-        simPoints={ctrl.bundle.simPoints}
+        baseMetrics={ctrl.bundle.baseMetrics}
+        sim={ctrl.bundle.sim}
+        baseSim={ctrl.bundle.baseSim}
+        externalSim={ctrl.externalSim}
         sandbox={ctrl.bundle.sandbox}
         benchmarks={ctrl.bundle.benchmarks}
         onRunMatlabOnline={() => void ctrl.runMatlabOnline()}
@@ -76,8 +83,9 @@ export function App(): React.JSX.Element {
           }
         }}
         onImportExternalFiles={(m, f) => void ctrl.importExternal(m, f)}
-        onStartNextRound={ctrl.startNextRound}
+        onStartNextRound={() => void ctrl.startNextRound()}
         matlabWaitingExpiry={ctrl.matlabWaitingExpiry}
+        matlabCommand={ctrl.matlabCommand}
         externalImported={ctrl.externalImported}
         errorBanner={ctrl.errorBanner}
       />

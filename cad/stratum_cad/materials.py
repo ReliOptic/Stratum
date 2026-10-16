@@ -105,6 +105,33 @@ MATERIAL_TABLE: dict[str, MaterialProps] = {
         basis_type="physics",
         citation="Mnemonic MnZn Ferrite Core Bulk Reference",
     ),
+    "copper_fr4": MaterialProps(
+        material_id="copper_fr4",
+        density_g_cm3=2.10,
+        cp_j_gk=0.600,
+        k_w_mk=2.50,
+        status="DOCUMENTED",
+        basis_type="physics",
+        citation="IPC-4101: Cu-Clad FR-4 Effective Bulk Laminate",
+    ),
+    "layered_pouch": MaterialProps(
+        material_id="layered_pouch",
+        density_g_cm3=2.25,
+        cp_j_gk=1.050,
+        k_w_mk=3.50,
+        status="DOCUMENTED",
+        basis_type="physics",
+        citation="Lumped electrochemical storage cell bulk properties",
+    ),
+    "stainless_steel": MaterialProps(
+        material_id="stainless_steel",
+        density_g_cm3=8.00,
+        cp_j_gk=0.500,
+        k_w_mk=16.2,
+        status="DOCUMENTED",
+        basis_type="physics",
+        citation="ASM Metals Handbook: AISI 304",
+    ),
 }
 
 ASSUMED_FALLBACK_MATERIAL = MaterialProps(

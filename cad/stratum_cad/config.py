@@ -25,7 +25,7 @@ def load_config() -> CadConfig:
     """Load CAD configuration from environment variables."""
     return CadConfig(
         max_revision=int(os.environ.get("MAX_REVISION", "3")),
-        min_dim_mm=float(os.environ.get("STRATUM_CAD_MIN_DIM_MM", "0.1")),
+        min_dim_mm=float(os.environ.get("STRATUM_CAD_MIN_DIM_MM", "0.2")),
         max_dim_mm=float(os.environ.get("STRATUM_CAD_MAX_DIM_MM", "2000.0")),
         min_wall_mm=float(os.environ.get("STRATUM_CAD_MIN_WALL_MM", "0.2")),
         step_vol_tol_ratio=float(os.environ.get("STRATUM_STEP_VOL_TOL", "0.01")),

@@ -2,6 +2,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { appConfig } from "@/lib/config";
 import type { InputMode, OrchestratorModel } from "@/lib/contracts";
+import { validateAttachments } from "@/lib/state";
 
 export interface ReconstructRequestPayload {
   readonly input_url: string;
@@ -23,12 +24,14 @@ export function PromptBar({ onSubmitRun, busy }: PromptBarProps): React.JSX.Elem
     React.useState<OrchestratorModel>("gemini-4-argon");
   const [deepVerify, setDeepVerify] = React.useState<boolean>(true);
   const [attachments, setAttachments] = React.useState<readonly string[]>([]);
+  const [attachmentError, setAttachmentError] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const files = e.target.files ? Array.from(e.target.files) : [];
-    const names = files.slice(0, appConfig.maxAttachments).map((f) => f.name);
-    setAttachments(names);
+    const check = validateAttachments(files.map((f) => f.name), appConfig.maxAttachments);
+    setAttachments(check.accepted);
+    setAttachmentError(check.error ? check.error.message : null);
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
@@ -121,7 +124,9 @@ export function PromptBar({ onSubmitRun, busy }: PromptBarProps): React.JSX.Elem
               <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
             </select>
           </label>
-          <span className="text-dim">Part sub-agents: Gemini 3.8 Flash</span>
+          <span data-testid="subagent-note" className="text-dim">
+            Part sub-agents: Gemini 3.8 Flash
+          </span>
         </div>
 
         <label className="flex cursor-pointer items-center gap-1.5 text-text">
@@ -136,6 +141,11 @@ export function PromptBar({ onSubmitRun, busy }: PromptBarProps): React.JSX.Elem
         </label>
       </div>
 
+      {attachmentError && (
+        <p data-testid="attachment-validation-note" className="font-mono text-xs text-danger">
+          {attachmentError}
+        </p>
+      )}
       <p
         data-testid="thesis-line"
         className="text-center font-mono text-xs text-dim"

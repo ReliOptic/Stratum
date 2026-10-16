@@ -11,12 +11,8 @@ from stratum_bridge.logging_utils import log_event
 from stratum_bridge.types import AuditOutcome, ExternalSample, ExternalSimResult
 from stratum_cad.types import SimResult
 
-REQUIRED_EXTERNAL_FILES: frozenset[str] = frozenset(
-    {"results.csv", "audit.txt", "stratum_results_manifest.txt"}
-)
-REQUIRED_MEASUREMENT_FILES: frozenset[str] = frozenset(
-    {"measurement.csv", "measurement_meta.txt"}
-)
+REQUIRED_EXTERNAL_FILES: frozenset[str] = frozenset({"results.csv", "audit.txt", "stratum_results_manifest.txt"})
+REQUIRED_MEASUREMENT_FILES: frozenset[str] = frozenset({"measurement.csv", "measurement_meta.txt"})
 FORMULA_PREFIXES: tuple[str, ...] = ("=", "+", "-", "@")
 
 
@@ -125,9 +121,11 @@ def _reaudit_against_expected(
 def parse_external_results(
     files: dict[str, bytes],
     expected_bundle_sha256: str,
-    expected: SimResult,
+    expected: SimResult | object,
 ) -> ExternalSimResult:
     """Validate and server-audit Simulink output files (results.csv, audit.txt, manifest)."""
+    from stratum_bridge.adapters import adapt_sim_result
+    expected = adapt_sim_result(expected)
     decoded = _decode_and_check_size(files, REQUIRED_EXTERNAL_FILES)
     man = _parse_kv_manifest(decoded["stratum_results_manifest.txt"], "stratum_results_manifest.txt")
     run_id, b_sha = man.get("run_id", ""), man.get("bundle_sha256", "")

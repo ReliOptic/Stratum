@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from stratum_bridge.adapters import (
+    adapt_metric_set,
+    adapt_sim_result,
+    to_contract_external_result,
+)
 from stratum_bridge.bundle import build_bundle
 from stratum_bridge.errors import (
     BundleMismatch,
@@ -23,10 +28,13 @@ __all__ = [
     "ExternalSimResult",
     "ResultsSchemaInvalid",
     "StratumBridgeError",
+    "adapt_metric_set",
+    "adapt_sim_result",
     "build_bundle",
     "generate_experiment_script",
     "online_entrypoint",
     "parse_external_results",
     "parse_external_results_json",
     "parse_measurement",
+    "to_contract_external_result",
 ]

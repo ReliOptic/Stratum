@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import math
 
+from typing import Any
+
+from stratum_cad.adapters import adapt_manifest, adapt_spec
 from stratum_cad.logging_utils import log_event
 from stratum_cad.materials import get_material_props
 from stratum_cad.rc_network import bbox_gap_and_overlap_area
@@ -19,14 +22,22 @@ from stratum_cad.types import (
 )
 
 METRIC_CATALOG: tuple[MetricDef, ...] = (
-    MetricDef("min_gap_heat_to_storage_mm", "Minimum Gap: Heat Source to Energy Storage", "mm", ["heat_source", "energy_storage"]),
-    MetricDef("min_enclosure_wall_mm", "Minimum Enclosure Wall Thickness", "mm", ["enclosure"]),
-    MetricDef("heat_path_to_exterior_mm", "Shortest Heat Source Path to Exterior", "mm", ["heat_source", "enclosure"]),
-    MetricDef("spreader_coverage_ratio", "Thermal Spreader Area Coverage Ratio", "ratio", ["heat_source", "thermal_spreader"]),
-    MetricDef("vent_open_area_mm2", "Enclosure Vent Open Area", "mm2", ["enclosure"]),
-    MetricDef("assembly_mass_g", "Total Assembly Mass", "g", []),
-    MetricDef("assembly_envelope_mm", "Assembly Bounding Envelope (X, Y, Z)", "mm", []),
-    MetricDef("peak_storage_temp_rise_C", "Peak Energy Storage Temperature Rise", "C", ["energy_storage"]),
+    MetricDef("min_gap_heat_to_storage_mm", "Minimum Gap: Heat Source to Energy Storage", "mm", ["heat_source", "energy_storage"],
+              "Minimum 3D bounding-box clearance between any heat_source and energy_storage part; increase separation to reduce thermal coupling."),
+    MetricDef("min_enclosure_wall_mm", "Minimum Enclosure Wall Thickness", "mm", ["enclosure"],
+              "Smallest shell wall_mm or thin dimension across enclosure parts (>= 0.2 mm); increase for structural stiffness."),
+    MetricDef("heat_path_to_exterior_mm", "Shortest Heat Source Path to Exterior", "mm", ["heat_source", "enclosure"],
+              "Shortest face-to-face distance from a heat_source bounding box to the outer enclosure boundary."),
+    MetricDef("spreader_coverage_ratio", "Thermal Spreader Area Coverage Ratio", "ratio", ["heat_source", "thermal_spreader"],
+              "Ratio of thermal_spreader XY footprint area to heat_source XY footprint area; increase spreader dx_mm/dy_mm to improve heat spreading."),
+    MetricDef("vent_open_area_mm2", "Enclosure Vent Open Area", "mm2", ["enclosure"],
+              "Total cross-sectional area of cut_box and cut_cylinder openings on enclosure parts; add cuts to increase convective cooling."),
+    MetricDef("assembly_mass_g", "Total Assembly Mass", "g", [],
+              "Sum of part volume_mm3 * material density_g_mm3 across all compiled solids."),
+    MetricDef("assembly_envelope_mm", "Assembly Bounding Envelope (X, Y, Z)", "mm", [],
+              "Overall assembly [dx, dy, dz] bounding envelope in mm (contract scalar value uses max span)."),
+    MetricDef("peak_storage_temp_rise_C", "Peak Energy Storage Temperature Rise", "C", ["energy_storage"],
+              "Maximum temperature rise above ambient (C) across energy_storage nodes in the lumped-RC backward-Euler thermal simulation."),
 )
 
 
@@ -104,8 +115,10 @@ def _compute_role_geometry_metrics(by_role: dict[str, list[PartManifestEntry]]) 
     return out
 
 
-def compute_metrics(spec: EngineeringSpec, manifest: Manifest) -> MetricSet:
+def compute_metrics(spec: EngineeringSpec | Any, manifest: Manifest | Any) -> MetricSet:
     """Compute all 8 deterministic engineering metrics for an assembly."""
+    spec = adapt_spec(spec)
+    manifest = adapt_manifest(manifest, spec)
     by_role: dict[str, list[PartManifestEntry]] = {}
     for mp in manifest.parts:
         by_role.setdefault(mp.role, []).append(mp)

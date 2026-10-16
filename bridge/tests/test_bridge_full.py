@@ -28,14 +28,14 @@ def _count_matlab_blocks_and_ends(script: str) -> tuple[int, int]:
     block_re = re.compile(r"\b(function|for|while|if|try|switch)\b")
     end_re = re.compile(r"\bend\b")
     for raw_line in script.splitlines():
-        code_no_str = re.sub(r"'[^']*'", "''", raw_line.split("%", 1)[0])
+        code_no_str = re.sub(r'"[^"]*"|\'[^\']*\'', "''", raw_line.split("%", 1)[0])
         openers += len(block_re.findall(code_no_str))
         ends += len(end_re.findall(code_no_str))
     return openers, ends
 
 
 def test_build_bundle_and_matlab_script_and_eigenvalues() -> None:
-    """Verify bundle members, CSV headers, .m ASCII + balanced ends, and A matrix eigenvalues < 0."""
+    """Verify bundle members, CSV headers, .m ASCII + balanced ends, no [sprintf( vertcat, disp(line), visible figure, and A matrix eigenvalues < 0."""
     spec0 = make_widget_a_spec(revision=0, duration_s=60.0)
     spec1 = make_widget_a_spec(revision=1, duration_s=60.0)
     c0, c1 = compile_parts(spec0.parts, revision=0), compile_parts(spec1.parts, revision=1)
@@ -61,14 +61,20 @@ def test_build_bundle_and_matlab_script_and_eigenvalues() -> None:
         assert expected_members.issubset(set(zf.namelist()))
         m_script = zf.read("run_stratum_experiment.m").decode("utf-8")
         assert m_script.isascii()
+        assert "[sprintf(" not in m_script
+        assert 'man = ["run_id=" + string(run_id);' in m_script
+        assert "disp(line);" in m_script
+        assert 'vis = "on";' in m_script
+        assert "fig = figure('Visible', char(vis));" in m_script
         assert _count_matlab_blocks_and_ends(m_script)[0] == _count_matlab_blocks_and_ends(m_script)[1]
         assert "INPUTS_REQUIRED:" in zf.read("agent_handoff_spec.txt").decode("utf-8")
 
 
 def test_online_entrypoint_and_json_roundtrip_and_tamper() -> None:
-    """Verify online_entrypoint balanced ends, JSON round-trip, tampered sha, and >5MB rejection."""
+    """Verify online_entrypoint balanced ends, no [sprintf( vertcat, JSON round-trip, tampered sha, and >5MB rejection."""
     script = online_entrypoint("https://stratum.example.org", "sec_tok_999", ["bundle_manifest.txt", "run_stratum_experiment.m"])
     assert script.isascii()
+    assert "[sprintf(" not in script
     assert _count_matlab_blocks_and_ends(script)[0] == _count_matlab_blocks_and_ends(script)[1]
 
     spec1 = make_widget_a_spec(revision=1, duration_s=10.0)
@@ -130,3 +136,31 @@ def test_parse_external_results_and_measurement_validation() -> None:
             assert exc.code == "RESULTS_SCHEMA_INVALID"
         else:
             raise AssertionError("Expected ResultsSchemaInvalid")
+
+
+def test_full_widget_a_closed_loop_rescore_v0_v1_v2() -> None:
+    """Verify full widget-a loop: V0 -> V1 -> bundle -> parse_external_results_json -> re-score -> V2."""
+    spec0 = make_widget_a_spec(revision=0, duration_s=120.0)
+    spec1 = make_widget_a_spec(revision=1, duration_s=120.0)
+    spec2 = make_widget_a_spec(revision=2, duration_s=120.0)
+    c0, c1, c2 = compile_parts(spec0.parts, revision=0), compile_parts(spec1.parts, revision=1), compile_parts(spec2.parts, revision=2)
+    m0, m1, m2 = compute_metrics(spec0, c0.manifest), compute_metrics(spec1, c1.manifest), compute_metrics(spec2, c2.manifest)
+    s0, s1, s2 = simulate(spec0, c0.manifest), simulate(spec1, c1.manifest), simulate(spec2, c2.manifest)
+
+    bundle_bytes = build_bundle(
+        "widget-a", spec0, spec1, m0, m1, s0, s1,
+        {"edges": [["core_heater", "storage_unit"]]},
+        c0.step_bytes, c1.step_bytes, manifest_base=c0.manifest, manifest_new=c1.manifest,
+    )
+    with zipfile.ZipFile(io.BytesIO(bundle_bytes), "r") as zf:
+        b_sha = dict(line.split("=", 1) for line in zf.read("bundle_manifest.txt").decode("utf-8").strip().splitlines())["bundle_sha256"]
+
+    json_payload = json.dumps({
+        "manifest": {"run_id": "widget-a", "bundle_sha256": b_sha, "matlab_version": "R2024b", "timestamp": "2026-10-16T12:30:00Z"},
+        "audit": {"status": "MATCH", "raw": "AUDIT: MATCH (max |dT| = 0.00 C)", "max_abs_diff_C": 0.0, "worst_t_s": 0.0},
+        "results": [{"time_s": smp.time_s, "revision": smp.revision, "node_id": smp.node_id, "temp_C": smp.temp_c} for smp in s1.series],
+    }).encode("utf-8")
+    ext = parse_external_results_json(json_payload, b_sha, s1)
+    assert ext.audit == "MATCH" and ext.per_node_peak_c["storage_unit"] == s1.per_node_peak_c["storage_unit"]
+    assert m0.metrics["peak_storage_temp_rise_C"].value > m1.metrics["peak_storage_temp_rise_C"].value > m2.metrics["peak_storage_temp_rise_C"].value
+

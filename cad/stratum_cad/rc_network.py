@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from typing import Any
+
 import numpy as np
 
+from stratum_cad.adapters import adapt_manifest, adapt_spec
 from stratum_cad.materials import get_material_props
 from stratum_cad.types import (
     BasisType,
@@ -84,8 +87,10 @@ def bbox_gap_and_overlap_area(
     return gap_mm, area_mm2, thickness_mm
 
 
-def build_rc_network(spec: EngineeringSpec, manifest: Manifest) -> RCNetwork:
+def build_rc_network(spec: EngineeringSpec | Any, manifest: Manifest | Any) -> RCNetwork:
     """Construct the deterministic lumped-RC network from EngineeringSpec and Manifest."""
+    spec = adapt_spec(spec)
+    manifest = adapt_manifest(manifest, spec)
     part_by_id: dict[str, Part] = {p.part_id: p for p in spec.parts}
     mp_by_id: dict[str, PartManifestEntry] = {mp.part_id: mp for mp in manifest.parts}
     nodes: list[RCNode] = []
@@ -162,9 +167,10 @@ def build_rc_network(spec: EngineeringSpec, manifest: Manifest) -> RCNetwork:
 
 
 def generate_stress_scenario(
-    spec: EngineeringSpec,
+    spec: EngineeringSpec | Any,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Generate time vector t_s (steps,) and power matrix q_w (steps, n_parts)."""
+    spec = adapt_spec(spec)
     dt = max(spec.dt_s, 1e-3)
     steps = int(round(spec.duration_s / dt)) + 1
     times_s = np.linspace(0.0, spec.duration_s, steps, dtype=np.float64)

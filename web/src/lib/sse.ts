@@ -1,9 +1,10 @@
 import { appConfig } from "@/lib/config";
 import type {
+  EventStage,
   RunEvent,
   RunStatus,
   TelemetryLayerId,
-  UsageStats,
+  UsageStat,
 } from "@/lib/contracts";
 import { createStratumError, logStructured, type StratumError } from "@/lib/utils";
 
@@ -11,8 +12,9 @@ export interface TelemetryState {
   readonly lastSeq: number;
   readonly activeStage: TelemetryLayerId | null;
   readonly completedStages: readonly TelemetryLayerId[];
+  readonly lastEventStage: EventStage | null;
   readonly partProgress: Readonly<Record<string, string>>;
-  readonly usage: UsageStats | null;
+  readonly usage: UsageStat | null;
   readonly thoughts: readonly string[];
   readonly status: RunStatus | null;
   readonly latestRevision: number;
@@ -25,6 +27,7 @@ export function createInitialTelemetryState(): TelemetryState {
     lastSeq: 0,
     activeStage: null,
     completedStages: [],
+    lastEventStage: null,
     partProgress: {},
     usage: null,
     thoughts: [],
@@ -35,6 +38,33 @@ export function createInitialTelemetryState(): TelemetryState {
   };
 }
 
+export function stageToTelemetryLayer(stage: EventStage): TelemetryLayerId {
+  if (stage === "fetch" || stage === "v0") {
+    return "surface";
+  }
+  if (stage === "verify") {
+    return "internal";
+  }
+  return "kernel";
+}
+
+function extractUsageStat(data: Readonly<Record<string, unknown>>): UsageStat | null {
+  const candidate =
+    typeof data.usage === "object" && data.usage !== null
+      ? (data.usage as Record<string, unknown>)
+      : data;
+  if (typeof candidate.context_tokens !== "number") {
+    return null;
+  }
+  return {
+    context_tokens: candidate.context_tokens,
+    output_tokens: typeof candidate.output_tokens === "number" ? candidate.output_tokens : 0,
+    sources: typeof candidate.sources === "number" ? candidate.sources : 0,
+    images: typeof candidate.images === "number" ? candidate.images : 0,
+    model_calls: typeof candidate.model_calls === "number" ? candidate.model_calls : 0,
+  };
+}
+
 export function reduceRunEvent(
   state: TelemetryState,
   event: RunEvent,
@@ -42,63 +72,57 @@ export function reduceRunEvent(
   if (event.seq <= state.lastSeq) {
     return state;
   }
-  const nextSeq = event.seq;
-  if (event.type === "usage" && event.usage) {
-    return { ...state, lastSeq: nextSeq, usage: event.usage };
-  }
-  if (event.type === "thought_summary" && event.message) {
-    return {
-      ...state,
-      lastSeq: nextSeq,
-      thoughts: [...state.thoughts.slice(-19), event.message],
-    };
-  }
-  if (event.type === "part_progress" && event.part_id && event.message) {
-    return {
-      ...state,
-      lastSeq: nextSeq,
-      partProgress: { ...state.partProgress, [event.part_id]: event.message },
-    };
-  }
-  if (event.type === "stage" && event.stage) {
-    const prevStages =
-      state.activeStage && !state.completedStages.includes(state.activeStage)
-        ? [...state.completedStages, state.activeStage]
-        : state.completedStages;
-    return {
-      ...state,
-      lastSeq: nextSeq,
-      activeStage: event.stage,
-      completedStages: prevStages,
-    };
-  }
-  if (event.type === "status" && event.status) {
-    const rev =
-      typeof event.revision === "number" && event.revision > state.latestRevision
-        ? event.revision
-        : state.latestRevision;
-    return { ...state, lastSeq: nextSeq, status: event.status, latestRevision: rev };
-  }
-  if (event.type === "external_results") {
-    return {
-      ...state,
-      lastSeq: nextSeq,
-      status: "EXTERNAL_RESULTS_IMPORTED",
-    };
-  }
-  if (event.type === "error") {
-    return {
-      ...state,
-      lastSeq: nextSeq,
-      status: "FAILED",
-      error: createStratumError(
-        "API_ERROR",
-        event.message ?? "Run stream reported an error",
-        "Check input sources or retry the operation.",
-      ),
-    };
-  }
-  return { ...state, lastSeq: nextSeq };
+  const layer = stageToTelemetryLayer(event.stage);
+  const completedStages =
+    state.activeStage && state.activeStage !== layer && !state.completedStages.includes(state.activeStage)
+      ? [...state.completedStages, state.activeStage]
+      : state.completedStages;
+
+  const usage = extractUsageStat(event.data) ?? state.usage;
+  const thoughtText =
+    typeof event.data.thought_summary === "string"
+      ? event.data.thought_summary
+      : event.data.kind === "thought_summary"
+        ? event.message
+        : null;
+  const thoughts = thoughtText ? [...state.thoughts.slice(-19), thoughtText] : state.thoughts;
+
+  const partProgress =
+    typeof event.part_id === "string" && event.part_id.length > 0
+      ? { ...state.partProgress, [event.part_id]: event.message }
+      : state.partProgress;
+
+  const rawStatus = typeof event.data.status === "string" ? (event.data.status as RunStatus) : null;
+  const status: RunStatus | null =
+    event.level === "error"
+      ? "FAILED"
+      : event.stage === "import"
+        ? (rawStatus ?? "EXTERNAL_RESULTS_IMPORTED")
+        : (rawStatus ?? state.status);
+
+  const latestRevision =
+    typeof event.revision === "number" && event.revision > state.latestRevision
+      ? event.revision
+      : state.latestRevision;
+
+  const error =
+    event.level === "error"
+      ? createStratumError("API_ERROR", event.message || "Run stream reported an error", "Check input sources or retry.")
+      : state.error;
+
+  return {
+    ...state,
+    lastSeq: event.seq,
+    activeStage: layer,
+    completedStages,
+    lastEventStage: event.stage,
+    partProgress,
+    usage,
+    thoughts,
+    status,
+    latestRevision,
+    error,
+  };
 }
 
 export function buildEventsUrl(
@@ -128,19 +152,14 @@ export function connectRunEventStream(
   let source: EventSource | null = null;
   let timerId: ReturnType<typeof setTimeout> | null = null;
   const delay = handlers.reconnectDelayMs ?? appConfig.sseReconnectDelayMs;
-  const makeSource =
-    handlers.createEventSource ?? ((url: string) => new EventSource(url));
+  const makeSource = handlers.createEventSource ?? ((url: string) => new EventSource(url));
 
   const openStream = (): void => {
-    if (closed) {
-      return;
-    }
+    if (closed) return;
     const url = buildEventsUrl(runId, currentSeq);
     logStructured("sse_connect", runId, null, "telemetry", { after: currentSeq });
     source = makeSource(url);
-    source.onopen = () => {
-      handlers.onConnectionChange?.(true);
-    };
+    source.onopen = () => handlers.onConnectionChange?.(true);
     source.onmessage = (msg: MessageEvent<string>) => {
       try {
         const parsed = JSON.parse(msg.data) as RunEvent;
@@ -149,34 +168,30 @@ export function connectRunEventStream(
         }
         handlers.onEvent(parsed);
       } catch (err: unknown) {
-        const stratumErr = createStratumError(
-          "PARSE_ERROR",
-          err instanceof Error ? err.message : "Invalid SSE event payload",
-          "Verify server event payload matches RunEvent contract.",
-        );
         logStructured("sse_parse_error", runId, null, "telemetry");
-        handlers.onError?.(stratumErr);
+        handlers.onError?.(
+          createStratumError(
+            "PARSE_ERROR",
+            err instanceof Error ? err.message : "Invalid SSE event payload",
+            "Verify server event payload matches RunEvent contract.",
+          ),
+        );
       }
     };
     source.onerror = () => {
       handlers.onConnectionChange?.(false);
       source?.close();
       if (!closed) {
-        logStructured("sse_reconnect_scheduled", runId, null, "telemetry", {
-          after: currentSeq,
-        });
+        logStructured("sse_reconnect_scheduled", runId, null, "telemetry", { after: currentSeq });
         timerId = setTimeout(openStream, delay);
       }
     };
   };
 
   openStream();
-
   return () => {
     closed = true;
-    if (timerId !== null) {
-      clearTimeout(timerId);
-    }
+    if (timerId !== null) clearTimeout(timerId);
     source?.close();
   };
 }

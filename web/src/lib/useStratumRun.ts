@@ -1,40 +1,15 @@
 import * as React from "react";
 import type { ReconstructRequestPayload } from "@/components/PromptBar";
-import {
-  confirmObjective,
-  createMatlabOnlineLink,
-  createRun,
-  fetchRevisionBundle,
-  type RevisionBundle,
-  triggerRevision,
-  uploadExternalResults,
-} from "@/lib/api";
-import {
-  connectRunEventStream,
-  createInitialTelemetryState,
-  reduceRunEvent,
-  type TelemetryState,
-} from "@/lib/sse";
-import {
-  confirmObjectiveDraft,
-  createObjectiveDraftState,
-  type ExternalImportMode,
-  type ObjectiveDraftState,
-  updateObjectiveDraft,
-} from "@/lib/state";
+import { confirmObjectiveByHash, createMatlabOnlineLink, createRun, fetchRevisionBundle, type RevisionBundle, reviewObjective, triggerRevision, uploadExternalResults } from "@/lib/api";
+import type { ExternalSimResult, Preset } from "@/lib/contracts";
+import { connectRunEventStream, createInitialTelemetryState, reduceRunEvent, type TelemetryState } from "@/lib/sse";
+import { canConfirmReviewedObjective, confirmObjectiveDraft, createObjectiveDraftState, type ExternalImportMode, type ObjectiveDraftState, reviewObjectiveDraft, selectPresetDraft, updateObjectiveDraft } from "@/lib/state";
 import { createStratumError, isStratumError, type StratumError } from "@/lib/utils";
 
 const EMPTY_BUNDLE: RevisionBundle = {
-  graph: null,
-  manifest: null,
-  presets: [],
-  variants: [],
-  passes: [],
-  metrics: [],
-  simPoints: [],
-  sandbox: null,
-  loopNodes: [],
-  benchmarks: [],
+  spec: null, graph: null, manifest: null, metrics: null, baseMetrics: null,
+  sim: null, baseSim: null, presets: [], variants: [], passes: [],
+  sandbox: null, loopNodes: [], benchmarks: [],
 };
 
 export interface StratumRunController {
@@ -46,17 +21,21 @@ export interface StratumRunController {
   readonly bundle: RevisionBundle;
   readonly objectiveDraft: ObjectiveDraftState;
   readonly matlabWaitingExpiry: string | null;
+  readonly matlabCommand: string | null;
   readonly externalImported: boolean;
+  readonly externalSim: ExternalSimResult | null;
   readonly errorBanner: StratumError | null;
   readonly setSelectedPartId: (partId: string) => void;
   readonly selectRevision: (rev: number) => void;
   readonly updateDraft: (text: string, presetId?: string | null) => void;
+  readonly selectPreset: (preset: Preset) => Promise<void>;
   readonly submitRun: (payload: ReconstructRequestPayload) => Promise<void>;
-  readonly confirmCurrentObjective: () => Promise<void>;
+  readonly reviewCurrentObjective: (overrideText?: string, baseRevOverride?: number) => Promise<void>;
+  readonly confirmReviewedObjective: () => Promise<void>;
   readonly executeRevision: () => Promise<void>;
   readonly runMatlabOnline: () => Promise<void>;
   readonly importExternal: (mode: ExternalImportMode, files: readonly File[]) => Promise<void>;
-  readonly startNextRound: () => void;
+  readonly startNextRound: () => Promise<void>;
 }
 
 export function useStratumRun(): StratumRunController {
@@ -68,21 +47,21 @@ export function useStratumRun(): StratumRunController {
   const [bundle, setBundle] = React.useState<RevisionBundle>(EMPTY_BUNDLE);
   const [objectiveDraft, setObjectiveDraft] = React.useState<ObjectiveDraftState>(() => createObjectiveDraftState(0));
   const [matlabWaitingExpiry, setMatlabWaitingExpiry] = React.useState<string | null>(null);
+  const [matlabCommand, setMatlabCommand] = React.useState<string | null>(null);
   const [externalImported, setExternalImported] = React.useState<boolean>(false);
+  const [externalSim, setExternalSim] = React.useState<ExternalSimResult | null>(null);
   const [nextRoundObjective, setNextRoundObjective] = React.useState<string>("");
   const [errorBanner, setErrorBanner] = React.useState<StratumError | null>(null);
 
   const captureError = React.useCallback((err: unknown): void => {
-    setErrorBanner(
-      isStratumError(err) ? err : createStratumError("API_ERROR", "Operation failed", "Check input and retry."),
-    );
+    setErrorBanner(isStratumError(err) ? err : createStratumError("API_ERROR", "Operation failed", "Check input and retry."));
   }, []);
 
   const refreshBundle = React.useCallback(async (id: string, rev: number): Promise<void> => {
     const data = await fetchRevisionBundle(id, rev);
     setBundle(data);
-    if (data.graph && data.graph.parts.length > 0) {
-      setSelectedPartId((prev) => prev ?? data.graph?.parts[0]?.part_id ?? null);
+    if (data.spec && data.spec.parts.length > 0) {
+      setSelectedPartId((prev) => prev ?? data.spec?.parts[0]?.part_id ?? null);
     }
   }, []);
 
@@ -95,10 +74,10 @@ export function useStratumRun(): StratumRunController {
           if (next.latestRevision !== prev.latestRevision) {
             setActiveRevision(next.latestRevision);
             void refreshBundle(runId, next.latestRevision);
-          } else if (ev.type === "status" || ev.type === "external_results") {
+          } else if (ev.stage === "import" || typeof ev.data.status === "string") {
             void refreshBundle(runId, activeRevision);
           }
-          if (ev.type === "external_results") {
+          if (ev.stage === "import" || ev.data.status === "EXTERNAL_RESULTS_IMPORTED") {
             setMatlabWaitingExpiry(null);
             setExternalImported(true);
           }
@@ -115,10 +94,11 @@ export function useStratumRun(): StratumRunController {
     setErrorBanner(null);
     try {
       const created = await createRun(payload);
+      const rev = created.latest_revision ?? 0;
       setRunId(created.run_id);
-      setTelemetry((prev) => ({ ...prev, status: created.status, latestRevision: created.revision }));
-      setActiveRevision(created.revision);
-      await refreshBundle(created.run_id, created.revision);
+      setTelemetry((prev) => ({ ...prev, status: created.status, latestRevision: rev, usage: created.usage ?? prev.usage }));
+      setActiveRevision(rev);
+      await refreshBundle(created.run_id, rev);
     } catch (err: unknown) {
       captureError(err);
     } finally {
@@ -126,12 +106,26 @@ export function useStratumRun(): StratumRunController {
     }
   };
 
-  const confirmCurrentObjective = async (): Promise<void> => {
-    if (!runId || !objectiveDraft.text.trim()) return;
+  const reviewCurrentObjective = async (overrideText?: string, baseRevOverride?: number): Promise<void> => {
+    const textToSend = (overrideText ?? objectiveDraft.text).trim();
+    const baseRev = baseRevOverride ?? activeRevision;
+    if (!runId || !textToSend) return;
     setErrorBanner(null);
     try {
-      const conf = await confirmObjective(runId, activeRevision, objectiveDraft.text);
-      setObjectiveDraft((prev) => confirmObjectiveDraft(prev, conf));
+      const objective = await reviewObjective(runId, baseRev, textToSend);
+      setObjectiveDraft((prev) => reviewObjectiveDraft(prev, objective));
+    } catch (err: unknown) {
+      captureError(err);
+    }
+  };
+
+  const confirmReviewedObjective = async (): Promise<void> => {
+    if (!runId || !canConfirmReviewedObjective(objectiveDraft) || !objectiveDraft.objectiveHash) return;
+    setErrorBanner(null);
+    try {
+      const confirmation = await confirmObjectiveByHash(runId, objectiveDraft.baseRevision, objectiveDraft.objectiveHash);
+      setObjectiveDraft((prev) => confirmObjectiveDraft(prev, confirmation));
+      setTelemetry((prev) => ({ ...prev, status: "OBJECTIVE_CONFIRMED" }));
     } catch (err: unknown) {
       captureError(err);
     }
@@ -154,8 +148,9 @@ export function useStratumRun(): StratumRunController {
     if (!runId) return;
     try {
       const link = await createMatlabOnlineLink(runId, Math.max(0, activeRevision - 1), activeRevision);
-      await navigator.clipboard?.writeText(link.command);
+      setMatlabCommand(link.command);
       setMatlabWaitingExpiry(link.expires_at);
+      void navigator.clipboard?.writeText(link.command).catch(() => undefined);
       window.open("https://matlab.mathworks.com", "_blank", "noopener,noreferrer");
     } catch (err: unknown) {
       captureError(err);
@@ -166,8 +161,11 @@ export function useStratumRun(): StratumRunController {
     if (!runId) return;
     try {
       const res = await uploadExternalResults(runId, mode, files);
+      setMatlabWaitingExpiry(null);
       setExternalImported(true);
+      if (res.external_sim) setExternalSim(res.external_sim);
       if (res.draft_objective) setNextRoundObjective(res.draft_objective);
+      if (res.status) setTelemetry((prev) => ({ ...prev, status: res.status ?? prev.status }));
       await refreshBundle(runId, activeRevision);
     } catch (err: unknown) {
       captureError(err);
@@ -176,14 +174,22 @@ export function useStratumRun(): StratumRunController {
 
   return {
     runId, busy, telemetry, activeRevision, selectedPartId, bundle, objectiveDraft,
-    matlabWaitingExpiry, externalImported, errorBanner, setSelectedPartId,
+    matlabWaitingExpiry, matlabCommand, externalImported, externalSim, errorBanner, setSelectedPartId,
     selectRevision: (rev: number) => { setActiveRevision(rev); if (runId) void refreshBundle(runId, rev); },
-    updateDraft: (txt: string, pid?: string | null) => setObjectiveDraft((prev) => updateObjectiveDraft(prev, txt, pid)),
-    submitRun, confirmCurrentObjective, executeRevision, runMatlabOnline, importExternal,
-    startNextRound: () => setObjectiveDraft({
-      baseRevision: telemetry.latestRevision,
-      text: nextRoundObjective || "Refine design based on external audit",
-      selectedPresetId: null, confirmToken: null, normalizedTargets: [],
-    }),
+    updateDraft: (txt: string, pid?: string | null) => {
+      setObjectiveDraft((prev) => updateObjectiveDraft(prev, txt, pid));
+      setTelemetry((prev) => (prev.status === "OBJECTIVE_CONFIRMED" ? { ...prev, status: "PRESETS_READY" } : prev));
+    },
+    selectPreset: async (preset: Preset) => {
+      setObjectiveDraft((prev) => selectPresetDraft(prev, preset));
+      setTelemetry((prev) => (prev.status === "OBJECTIVE_CONFIRMED" ? { ...prev, status: "PRESETS_READY" } : prev));
+      await reviewCurrentObjective(preset.rationale, activeRevision);
+    },
+    submitRun, reviewCurrentObjective, confirmReviewedObjective, executeRevision, runMatlabOnline, importExternal,
+    startNextRound: async () => {
+      const nextText = nextRoundObjective || "Refine design based on external audit";
+      setObjectiveDraft((prev) => ({ ...updateObjectiveDraft(prev, nextText, null), baseRevision: telemetry.latestRevision }));
+      await reviewCurrentObjective(nextText, telemetry.latestRevision);
+    },
   };
 }

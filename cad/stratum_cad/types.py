@@ -13,19 +13,15 @@ PartRole = Literal[
 EvidenceStatus = Literal["OBSERVED", "DOCUMENTED", "INFERRED", "ASSUMED", "UNKNOWN"]
 BasisType = Literal["source", "physics", "model_prior"]
 
-VALID_PART_ROLES: frozenset[str] = frozenset(
-    {
-        "heat_source", "energy_storage", "power_conversion", "enclosure",
-        "structural_frame", "thermal_spreader", "user_contact_surface",
-        "connector", "magnetic", "fastener", "moving_part", "other",
-    }
-)
+VALID_PART_ROLES: frozenset[str] = frozenset({
+    "heat_source", "energy_storage", "power_conversion", "enclosure", "structural_frame", "thermal_spreader",
+    "user_contact_surface", "connector", "magnetic", "fastener", "moving_part", "other",
+})
 
 
 @dataclass(frozen=True)
 class CadOp:
     """Single deterministic CAD operation in a part's feature stack."""
-
     op: str
     params: dict[str, float | str] = field(default_factory=dict)
 
@@ -33,7 +29,6 @@ class CadOp:
 @dataclass(frozen=True)
 class Placement:
     """Rigid-body translation (mm) and Euler angles (deg) in CAD Z-up frame."""
-
     x_mm: float = 0.0
     y_mm: float = 0.0
     z_mm: float = 0.0
@@ -45,7 +40,6 @@ class Placement:
 @dataclass(frozen=True)
 class Part:
     """Engineering part definition with geometry ops, role, and thermal inputs."""
-
     part_id: str
     role: PartRole
     ops: list[CadOp]
@@ -62,7 +56,6 @@ class Part:
 @dataclass(frozen=True)
 class CheckResult:
     """Outcome of a single assembly or solid verification check."""
-
     check_id: str
     passed: bool
     severity: Literal["error", "warn", "info"] = "error"
@@ -74,7 +67,6 @@ class CheckResult:
 @dataclass(frozen=True)
 class PartManifestEntry:
     """Compiled geometric properties of a single part."""
-
     part_id: str
     role: PartRole
     material: str
@@ -91,7 +83,6 @@ class PartManifestEntry:
 @dataclass(frozen=True)
 class Manifest:
     """Compiled CAD manifest with per-part geometry and check results."""
-
     parts: list[PartManifestEntry]
     checks: dict[str, CheckResult]
     step_sha256: str
@@ -100,11 +91,15 @@ class Manifest:
     revision: int = 0
     coordinate_frame: str = "GLB:Y-up,STEP:Z-up,units:mm"
 
+    def to_contract(self) -> object:
+        """Convert this internal Manifest to the contract Pydantic model."""
+        from stratum_cad.adapters import to_contract_manifest
+        return to_contract_manifest(self)
+
 
 @dataclass(frozen=True)
 class CompileResult:
     """Result of compiling a list of parts into STEP, GLB, and Manifest."""
-
     step_bytes: bytes
     glb_bytes: bytes
     manifest: Manifest
@@ -113,17 +108,16 @@ class CompileResult:
 @dataclass(frozen=True)
 class MetricDef:
     """Catalog definition for a deterministic engineering metric."""
-
     metric_id: str
     title: str
     unit: str
     required_roles: list[PartRole]
+    description: str = ""
 
 
 @dataclass(frozen=True)
 class MetricValue:
     """Computed value of a deterministic engineering metric."""
-
     metric_id: str
     value: float | list[float] | None
     unit: str
@@ -136,16 +130,19 @@ class MetricValue:
 @dataclass(frozen=True)
 class MetricSet:
     """Collection of computed deterministic metrics for a design revision."""
-
     metrics: dict[str, MetricValue]
     run_id: str = "widget-a"
     revision: int = 0
+
+    def to_contract(self) -> object:
+        """Convert this internal MetricSet to the contract Pydantic model."""
+        from stratum_cad.adapters import to_contract_metric_set
+        return to_contract_metric_set(self)
 
 
 @dataclass(frozen=True)
 class StressPulse:
     """Optional time-windowed power multiplier for stress testing."""
-
     start_s: float
     end_s: float
     multiplier: float = 1.0
@@ -154,7 +151,6 @@ class StressPulse:
 @dataclass(frozen=True)
 class EngineeringSpec:
     """Complete engineering specification for metrics and thermal simulation."""
-
     parts: list[Part]
     run_id: str = "widget-a"
     revision: int = 0
@@ -169,7 +165,6 @@ class EngineeringSpec:
 @dataclass(frozen=True)
 class SimSample:
     """Single time-step sample for a thermal node."""
-
     time_s: float
     revision: int
     node_id: str
@@ -180,7 +175,6 @@ class SimSample:
 @dataclass(frozen=True)
 class SimResult:
     """Result of deterministic lumped-RC backward-Euler thermal simulation."""
-
     run_id: str
     revision: int
     dt_s: float
@@ -193,3 +187,8 @@ class SimResult:
     storage_node_ids: list[str]
     series: list[SimSample]
     csv_text: str
+
+    def to_contract(self, spec: EngineeringSpec | None = None) -> object:
+        """Convert this internal SimResult to the contract Pydantic model."""
+        from stratum_cad.adapters import to_contract_sim_result
+        return to_contract_sim_result(self, spec)

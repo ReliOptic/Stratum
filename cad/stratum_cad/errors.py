@@ -26,6 +26,10 @@ class StratumCadError(Exception):
         self.file = file
         self.line = line
 
+    def __str__(self) -> str:
+        loc = f" [part_id={self.part_id}, op_index={self.op_index}]" if self.part_id is not None else ""
+        return f"{self.code}{loc}: {self.message} | Repair hint: {self.recovery_hint}"
+
     @property
     def repair_hint(self) -> str:
         """Alias for recovery_hint to satisfy both contract conventions."""

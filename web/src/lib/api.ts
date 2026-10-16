@@ -1,19 +1,6 @@
 import type { ReconstructRequestPayload } from "@/components/PromptBar";
 import { appConfig } from "@/lib/config";
-import type {
-  BenchmarkEntry,
-  CadManifest,
-  ComponentGraph,
-  LoopNode,
-  MetricDiff,
-  ObjectiveConfirmation,
-  ObjectivePreset,
-  PassPrediction,
-  RunStatus,
-  SandboxCheck,
-  SimPoint,
-  VariantCard,
-} from "@/lib/contracts";
+import type { BenchmarkComparison, ComponentGraph, ConfirmResponse, EngineeringSpec, ExternalSimResult, LoopNode, Manifest, MetricSet, Objective, PassReport, Preset, Run, RunStatus, SandboxCheck, SimResult, Variant } from "@/lib/contracts";
 import type { ExternalImportMode } from "@/lib/state";
 import { createStratumError, logStructured } from "@/lib/utils";
 
@@ -41,7 +28,7 @@ export async function requestJson<T>(
     throw createStratumError(
       "CONFIRMATION_REQUIRED_409",
       "Objective confirmation token is required or expired (409)",
-      "Click Confirm Objective before triggering a revision.",
+      "Review and click Confirm Objective before triggering a revision.",
       409,
     );
   }
@@ -66,36 +53,29 @@ export async function requestJson<T>(
   return (await response.json()) as T;
 }
 
-export interface CreateRunResponse {
-  readonly run_id: string;
-  readonly status: RunStatus;
-  readonly revision: number;
-}
-
-export async function createRun(payload: ReconstructRequestPayload): Promise<CreateRunResponse> {
-  return requestJson<CreateRunResponse>(
+export async function createRun(payload: ReconstructRequestPayload): Promise<Run> {
+  return requestJson<Run>(
     "/runs",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    },
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
     null,
     "reconstruct",
   );
 }
 
 export interface RevisionBundle {
+  readonly spec: EngineeringSpec | null;
   readonly graph: ComponentGraph | null;
-  readonly manifest: CadManifest | null;
-  readonly presets: readonly ObjectivePreset[];
-  readonly variants: readonly VariantCard[];
-  readonly passes: readonly PassPrediction[];
-  readonly metrics: readonly MetricDiff[];
-  readonly simPoints: readonly SimPoint[];
+  readonly manifest: Manifest | null;
+  readonly metrics: MetricSet | null;
+  readonly baseMetrics: MetricSet | null;
+  readonly sim: SimResult | null;
+  readonly baseSim: SimResult | null;
+  readonly presets: readonly Preset[];
+  readonly variants: readonly Variant[];
+  readonly passes: readonly PassReport[];
   readonly sandbox: SandboxCheck | null;
   readonly loopNodes: readonly LoopNode[];
-  readonly benchmarks: readonly BenchmarkEntry[];
+  readonly benchmarks: readonly BenchmarkComparison[];
 }
 
 async function safeGet<T>(path: string, runId: string, fallback: T): Promise<T> {
@@ -108,37 +88,50 @@ async function safeGet<T>(path: string, runId: string, fallback: T): Promise<T> 
 
 export async function fetchRevisionBundle(runId: string, rev: number): Promise<RevisionBundle> {
   const id = encodeURIComponent(runId);
-  const [graph, manifest, presets, variants, passes, metrics, simPoints, sandbox, loopNodes, benchmarks] =
+  const baseRev = Math.max(0, rev - 1);
+  const [spec, graph, manifest, metrics, baseMetrics, sim, baseSim, presets, variants, passes, sandbox, loopNodes, benchmarks] =
     await Promise.all([
+      safeGet<EngineeringSpec | null>(`/runs/${id}/spec?rev=${rev}`, runId, null),
       safeGet<ComponentGraph | null>(`/runs/${id}/graph?rev=${rev}`, runId, null),
-      safeGet<CadManifest | null>(`/runs/${id}/manifest?rev=${rev}`, runId, null),
-      safeGet<readonly ObjectivePreset[]>(`/runs/${id}/presets?base=${rev}`, runId, []),
-      safeGet<readonly VariantCard[]>(`/runs/${id}/variants?rev=${rev}`, runId, []),
-      safeGet<readonly PassPrediction[]>(`/runs/${id}/passes?rev=${rev}`, runId, []),
-      safeGet<readonly MetricDiff[]>(`/runs/${id}/metrics?rev=${rev}`, runId, []),
-      safeGet<readonly SimPoint[]>(`/runs/${id}/sim?rev=${rev}`, runId, []),
+      safeGet<Manifest | null>(`/runs/${id}/manifest?rev=${rev}`, runId, null),
+      safeGet<MetricSet | null>(`/runs/${id}/metrics?rev=${rev}`, runId, null),
+      rev > 0 ? safeGet<MetricSet | null>(`/runs/${id}/metrics?rev=${baseRev}`, runId, null) : Promise.resolve(null),
+      safeGet<SimResult | null>(`/runs/${id}/sim?rev=${rev}`, runId, null),
+      rev > 0 ? safeGet<SimResult | null>(`/runs/${id}/sim?rev=${baseRev}`, runId, null) : Promise.resolve(null),
+      safeGet<readonly Preset[]>(`/runs/${id}/presets?base=${rev}`, runId, []),
+      safeGet<readonly Variant[]>(`/runs/${id}/variants?rev=${rev}`, runId, []),
+      safeGet<readonly PassReport[]>(`/runs/${id}/passes?rev=${rev}`, runId, []),
       safeGet<SandboxCheck | null>(`/runs/${id}/sandbox?rev=${rev}`, runId, null),
       safeGet<readonly LoopNode[]>(`/runs/${id}/loop`, runId, []),
-      safeGet<readonly BenchmarkEntry[]>(`/runs/${id}/benchmarks`, runId, []),
+      safeGet<readonly BenchmarkComparison[]>(`/runs/${id}/benchmarks`, runId, []),
     ]);
-  return { graph, manifest, presets, variants, passes, metrics, simPoints, sandbox, loopNodes, benchmarks };
+  return { spec, graph, manifest, metrics, baseMetrics, sim, baseSim, presets, variants, passes, sandbox, loopNodes, benchmarks };
 }
 
-export async function confirmObjective(
-  runId: string,
-  baseRevision: number,
-  objectiveText: string,
-): Promise<ObjectiveConfirmation> {
+export async function reviewObjective(runId: string, baseRevision: number, objectiveText: string): Promise<Objective> {
   const id = encodeURIComponent(runId);
   const body = JSON.stringify({ base_revision: baseRevision, text: objectiveText });
-  const headers = { "Content-Type": "application/json" };
-  await requestJson<unknown>(`/runs/${id}/objective`, { method: "POST", headers, body }, runId, "objective");
-  return requestJson<ObjectiveConfirmation>(
-    `/runs/${id}/objective/confirm`,
-    { method: "POST", headers, body },
-    runId,
-    "objective_confirm",
-  );
+  return requestJson<Objective>(`/runs/${id}/objective`, { method: "POST", headers: { "Content-Type": "application/json" }, body }, runId, "objective");
+}
+
+export async function confirmObjectiveByHash(runId: string, baseRevision: number, objectiveHash: string): Promise<ConfirmResponse> {
+  const id = encodeURIComponent(runId);
+  const body = JSON.stringify({ objective_hash: objectiveHash, base_revision: baseRevision });
+  return requestJson<ConfirmResponse>(`/runs/${id}/objective/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body }, runId, "objective_confirm");
+}
+
+export function buildArtifactGlbUrl(runId: string, rev: number): string {
+  return `${appConfig.apiBaseUrl}/runs/${encodeURIComponent(runId)}/artifacts/${rev}.glb`;
+}
+
+export async function fetchArtifactGlbBuffer(runId: string, rev: number): Promise<ArrayBuffer | null> {
+  try {
+    const res = await fetch(buildArtifactGlbUrl(runId, rev), { method: "GET", credentials: "include" });
+    if (!res.ok) return null;
+    return await res.arrayBuffer();
+  } catch {
+    return null;
+  }
 }
 
 export async function triggerRevision(
@@ -147,7 +140,7 @@ export async function triggerRevision(
   confirmToken: string | null,
 ): Promise<{ readonly revision: number; readonly status: RunStatus }> {
   const id = encodeURIComponent(runId);
-  return requestJson<{ readonly revision: number; readonly status: RunStatus }>(
+  const res = await requestJson<{ readonly revision?: number; readonly latest_revision?: number; readonly status: RunStatus }>(
     `/runs/${id}/revisions`,
     {
       method: "POST",
@@ -157,6 +150,7 @@ export async function triggerRevision(
     runId,
     "revision",
   );
+  return { revision: res.revision ?? res.latest_revision ?? baseRevision + 1, status: res.status };
 }
 
 export async function createMatlabOnlineLink(
@@ -165,24 +159,17 @@ export async function createMatlabOnlineLink(
   newRev: number,
 ): Promise<{ readonly command: string; readonly expires_at: string }> {
   const id = encodeURIComponent(runId);
-  return requestJson<{ readonly command: string; readonly expires_at: string }>(
-    `/runs/${id}/matlab-link?base=${baseRev}&new=${newRev}`,
-    { method: "POST" },
-    runId,
-    "matlab_link",
-  );
+  return requestJson(`/runs/${id}/matlab-link?base=${baseRev}&new=${newRev}`, { method: "POST" }, runId, "matlab_link");
 }
 
 export async function uploadExternalResults(
   runId: string,
   mode: ExternalImportMode,
   files: readonly File[],
-): Promise<{ readonly status: RunStatus; readonly draft_objective?: string; readonly base_revision?: number }> {
+): Promise<{ readonly status?: RunStatus; readonly draft_objective?: string; readonly base_revision?: number; readonly external_sim?: ExternalSimResult }> {
   const id = encodeURIComponent(runId);
   const form = new FormData();
   form.append("mode", mode);
-  for (const f of files) {
-    form.append("files", f);
-  }
+  for (const f of files) form.append("files", f);
   return requestJson(`/runs/${id}/external-results`, { method: "POST", body: form }, runId, "external_results");
 }
