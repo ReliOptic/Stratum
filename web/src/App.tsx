@@ -55,8 +55,9 @@ export function App(): React.JSX.Element {
         presets={ctrl.bundle.presets}
         objectiveDraft={ctrl.objectiveDraft}
         onUpdateDraftText={ctrl.updateDraft}
-        onSelectPreset={ctrl.selectPreset}
-        onRequestConfirmObjective={() => void ctrl.confirmCurrentObjective()}
+        onSelectPreset={(p) => void ctrl.selectPreset(p)}
+        onReviewObjective={() => void ctrl.reviewCurrentObjective()}
+        onConfirmObjective={() => void ctrl.confirmReviewedObjective()}
         onExecuteRevision={() => void ctrl.executeRevision()}
         loopNodes={ctrl.bundle.loopNodes}
         latestRevision={ctrl.telemetry.latestRevision}
@@ -68,6 +69,7 @@ export function App(): React.JSX.Element {
         baseMetrics={ctrl.bundle.baseMetrics}
         sim={ctrl.bundle.sim}
         baseSim={ctrl.bundle.baseSim}
+        externalSim={ctrl.externalSim}
         sandbox={ctrl.bundle.sandbox}
         benchmarks={ctrl.bundle.benchmarks}
         onRunMatlabOnline={() => void ctrl.runMatlabOnline()}
@@ -81,8 +83,9 @@ export function App(): React.JSX.Element {
           }
         }}
         onImportExternalFiles={(m, f) => void ctrl.importExternal(m, f)}
-        onStartNextRound={ctrl.startNextRound}
+        onStartNextRound={() => void ctrl.startNextRound()}
         matlabWaitingExpiry={ctrl.matlabWaitingExpiry}
+        matlabCommand={ctrl.matlabCommand}
         externalImported={ctrl.externalImported}
         errorBanner={ctrl.errorBanner}
       />

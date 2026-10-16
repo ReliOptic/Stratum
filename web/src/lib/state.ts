@@ -27,8 +27,7 @@ export function createObjectiveDraftState(baseRevision: number = 0): ObjectiveDr
 export function updateObjectiveDraft(
   state: ObjectiveDraftState,
   text: string,
-  presetId: string | null = state.selectedPresetId,
-  targets: readonly Target[] = [],
+  presetId: string | null = null,
 ): ObjectiveDraftState {
   return {
     ...state,
@@ -36,35 +35,49 @@ export function updateObjectiveDraft(
     selectedPresetId: presetId,
     confirmToken: null,
     expiresAt: null,
-    targets,
+    targets: [],
     objectiveHash: null,
   };
 }
 
 export function selectPresetDraft(state: ObjectiveDraftState, preset: Preset): ObjectiveDraftState {
-  return updateObjectiveDraft(state, preset.rationale, preset.preset_id, preset.targets);
+  return updateObjectiveDraft(state, preset.rationale, preset.preset_id);
 }
 
-export function confirmObjectiveDraft(
-  state: ObjectiveDraftState,
-  objective: Objective,
-  confirmation: ConfirmResponse,
-): ObjectiveDraftState {
+export function reviewObjectiveDraft(state: ObjectiveDraftState, objective: Objective): ObjectiveDraftState {
   return {
     ...state,
     baseRevision: objective.base_revision,
     text: objective.text,
-    confirmToken: confirmation.token,
-    expiresAt: confirmation.expires_at,
+    confirmToken: null,
+    expiresAt: null,
     targets: objective.targets,
     objectiveHash: objective.objective_hash,
   };
 }
 
-export function formatTargetSummary(target: Target): string {
+export function canConfirmReviewedObjective(state: ObjectiveDraftState): boolean {
+  return typeof state.objectiveHash === "string" && state.objectiveHash.trim().length > 0 && state.targets.length > 0;
+}
+
+export function confirmObjectiveDraft(state: ObjectiveDraftState, confirmation: ConfirmResponse): ObjectiveDraftState {
+  if (!canConfirmReviewedObjective(state)) return state;
+  return { ...state, confirmToken: confirmation.token, expiresAt: confirmation.expires_at };
+}
+
+export function formatTargetSummary(target: Target, baseRevision?: number): string {
   const op = target.comparator === "lte" ? "<=" : target.comparator === "lt" ? "<" : target.comparator === "gte" ? ">=" : ">";
   const unitSuffix = target.unit ? ` ${target.unit}` : "";
-  return `${target.metric_id} ${op} ${target.threshold}${unitSuffix}`;
+  const baseSuffix = typeof baseRevision === "number" ? ` [base V${baseRevision}]` : "";
+  return `${target.metric_id} (${target.comparator} / ${op}) ${target.threshold}${unitSuffix}${baseSuffix}`;
+}
+
+export function isTargetMet(value: number | null | undefined, target: Target | undefined): boolean | null {
+  if (typeof value !== "number" || !target) return null;
+  if (target.comparator === "lt") return value < target.threshold;
+  if (target.comparator === "lte") return value <= target.threshold;
+  if (target.comparator === "gt") return value > target.threshold;
+  return value >= target.threshold;
 }
 
 export function canTriggerRevision(
@@ -75,6 +88,7 @@ export function canTriggerRevision(
   const statusOk = runStatus === undefined || runStatus === null || runStatus === "OBJECTIVE_CONFIRMED";
   return (
     statusOk &&
+    canConfirmReviewedObjective(state) &&
     typeof state.confirmToken === "string" &&
     state.confirmToken.trim().length > 0 &&
     state.baseRevision >= 0 &&
@@ -92,10 +106,8 @@ export function mapManifestToPartByNode(manifest: Manifest | null): Readonly<Rec
 export function parseGlbNodeNames(buffer: ArrayBuffer): readonly string[] {
   if (buffer.byteLength < 20) return [];
   const view = new DataView(buffer);
-  const magic = view.getUint32(0, true);
   const jsonLen = view.getUint32(12, true);
-  const chunkType = view.getUint32(16, true);
-  if (magic !== 0x46546c67 || chunkType !== 0x4e4f534a || 20 + jsonLen > buffer.byteLength) return [];
+  if (view.getUint32(0, true) !== 0x46546c67 || view.getUint32(16, true) !== 0x4e4f534a || 20 + jsonLen > buffer.byteLength) return [];
   try {
     const jsonText = new TextDecoder().decode(new Uint8Array(buffer, 20, jsonLen));
     const parsed = JSON.parse(jsonText) as { readonly nodes?: readonly { readonly name?: string }[] };
@@ -132,10 +144,8 @@ export function computeExplodedPosition(
 ): readonly [number, number, number] {
   const clamped = Math.max(0, Math.min(1, explodeFactor));
   const [cx, cy, cz] = computePartCenterMm(part);
-  const [ax, ay, az] = assemblyCentroid;
-  const vx = cx - ax, vy = cy - ay, vz = cz - az;
-  const mag = Math.hypot(vx, vy, vz);
-  const [dx, dy, dz] = mag > 0.001 ? [vx * 0.85, vy * 0.85 + 6, vz * 0.85 + 10] : [0, 12, 16];
+  const vx = cx - assemblyCentroid[0], vy = cy - assemblyCentroid[1], vz = cz - assemblyCentroid[2];
+  const [dx, dy, dz] = Math.hypot(vx, vy, vz) > 0.001 ? [vx * 0.85, vy * 0.85 + 6, vz * 0.85 + 10] : [0, 12, 16];
   return [cx + dx * clamped, cy + dy * clamped, cz + dz * clamped];
 }
 
@@ -172,13 +182,9 @@ export function validateExternalResultsUpload(
   const normalized = new Set(fileNames.map((n) => n.trim().toLowerCase()));
   if (mode === "simulink") {
     const missing = REQUIRED_SIMULINK_FILES.filter((req) => !normalized.has(req));
-    if (missing.length > 0) {
-      return { valid: false, error: createStratumError("VALIDATION_ERROR", `Missing required Simulink bundle files: ${missing.join(", ")}`, "Upload results.csv, audit.txt, and stratum_results_manifest.txt.") };
-    }
+    if (missing.length > 0) return { valid: false, error: createStratumError("VALIDATION_ERROR", `Missing required Simulink bundle files: ${missing.join(", ")}`, "Upload results.csv, audit.txt, and stratum_results_manifest.txt.") };
     return { valid: true };
   }
-  if (!normalized.has("measurement.csv")) {
-    return { valid: false, error: createStratumError("VALIDATION_ERROR", "Missing required lab file: measurement.csv", "Attach measurement.csv and optional metadata.") };
-  }
+  if (!normalized.has("measurement.csv")) return { valid: false, error: createStratumError("VALIDATION_ERROR", "Missing required lab file: measurement.csv", "Attach measurement.csv and optional metadata.") };
   return { valid: true };
 }

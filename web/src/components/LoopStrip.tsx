@@ -13,6 +13,7 @@ export interface LoopStripProps {
   readonly onDownloadBridgeZip: () => void;
   readonly onToggleImportDrawer: () => void;
   readonly matlabWaitingExpiry: string | null;
+  readonly matlabCommand?: string | null;
 }
 
 export function LoopStrip({
@@ -24,12 +25,14 @@ export function LoopStrip({
   onDownloadBridgeZip,
   onToggleImportDrawer,
   matlabWaitingExpiry,
+  matlabCommand = null,
 }: LoopStripProps): React.JSX.Element {
   const revisionTabs = getAvailableRevisions(latestRevision);
 
   return (
     <div
       data-testid="loop-strip"
+      data-matlab-command={matlabCommand ?? "none"}
       className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-2"
     >
       <div className="flex flex-wrap items-center gap-1.5">
@@ -93,8 +96,12 @@ export function LoopStrip({
       {latestRevision >= 1 && (
         <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
           {matlabWaitingExpiry && (
-            <Badge variant="amber" data-testid="matlab-waiting-badge">
-              Waiting for MATLAB… (exp {matlabWaitingExpiry})
+            <Badge
+              variant="amber"
+              data-testid="matlab-waiting-badge"
+              data-expires-at={matlabWaitingExpiry}
+            >
+              Waiting for MATLAB… (expires {matlabWaitingExpiry})
             </Badge>
           )}
           <Button

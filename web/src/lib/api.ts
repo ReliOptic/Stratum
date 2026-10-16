@@ -1,6 +1,6 @@
 import type { ReconstructRequestPayload } from "@/components/PromptBar";
 import { appConfig } from "@/lib/config";
-import type { BenchmarkComparison, ComponentGraph, ConfirmResponse, EngineeringSpec, LoopNode, Manifest, MetricSet, Objective, PassReport, Preset, Run, RunStatus, SandboxCheck, SimResult, Variant } from "@/lib/contracts";
+import type { BenchmarkComparison, ComponentGraph, ConfirmResponse, EngineeringSpec, ExternalSimResult, LoopNode, Manifest, MetricSet, Objective, PassReport, Preset, Run, RunStatus, SandboxCheck, SimResult, Variant } from "@/lib/contracts";
 import type { ExternalImportMode } from "@/lib/state";
 import { createStratumError, logStructured } from "@/lib/utils";
 
@@ -28,7 +28,7 @@ export async function requestJson<T>(
     throw createStratumError(
       "CONFIRMATION_REQUIRED_409",
       "Objective confirmation token is required or expired (409)",
-      "Click Confirm Objective before triggering a revision.",
+      "Review and click Confirm Objective before triggering a revision.",
       409,
     );
   }
@@ -56,11 +56,7 @@ export async function requestJson<T>(
 export async function createRun(payload: ReconstructRequestPayload): Promise<Run> {
   return requestJson<Run>(
     "/runs",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    },
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
     null,
     "reconstruct",
   );
@@ -112,30 +108,16 @@ export async function fetchRevisionBundle(runId: string, rev: number): Promise<R
   return { spec, graph, manifest, metrics, baseMetrics, sim, baseSim, presets, variants, passes, sandbox, loopNodes, benchmarks };
 }
 
-export async function confirmObjective(
-  runId: string,
-  baseRevision: number,
-  objectiveText: string,
-): Promise<{ readonly objective: Objective; readonly confirmation: ConfirmResponse }> {
+export async function reviewObjective(runId: string, baseRevision: number, objectiveText: string): Promise<Objective> {
   const id = encodeURIComponent(runId);
   const body = JSON.stringify({ base_revision: baseRevision, text: objectiveText });
-  const headers = { "Content-Type": "application/json" };
-  const objective = await requestJson<Objective>(`/runs/${id}/objective`, { method: "POST", headers, body }, runId, "objective");
-  const confirmation = await requestJson<ConfirmResponse>(
-    `/runs/${id}/objective/confirm`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        objective_hash: objective.objective_hash,
-        base_revision: baseRevision,
-        confirmed_by_user: true,
-      }),
-    },
-    runId,
-    "objective_confirm",
-  );
-  return { objective, confirmation };
+  return requestJson<Objective>(`/runs/${id}/objective`, { method: "POST", headers: { "Content-Type": "application/json" }, body }, runId, "objective");
+}
+
+export async function confirmObjectiveByHash(runId: string, baseRevision: number, objectiveHash: string): Promise<ConfirmResponse> {
+  const id = encodeURIComponent(runId);
+  const body = JSON.stringify({ objective_hash: objectiveHash, base_revision: baseRevision });
+  return requestJson<ConfirmResponse>(`/runs/${id}/objective/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body }, runId, "objective_confirm");
 }
 
 export function buildArtifactGlbUrl(runId: string, rev: number): string {
@@ -184,7 +166,7 @@ export async function uploadExternalResults(
   runId: string,
   mode: ExternalImportMode,
   files: readonly File[],
-): Promise<{ readonly status: RunStatus; readonly draft_objective?: string; readonly base_revision?: number }> {
+): Promise<{ readonly status?: RunStatus; readonly draft_objective?: string; readonly base_revision?: number; readonly external_sim?: ExternalSimResult }> {
   const id = encodeURIComponent(runId);
   const form = new FormData();
   form.append("mode", mode);

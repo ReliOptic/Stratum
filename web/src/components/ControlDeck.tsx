@@ -4,18 +4,9 @@ import { RevisionPanel } from "@/components/RevisionPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { appConfig } from "@/lib/config";
-import type {
-  BenchmarkComparison,
-  LoopNode,
-  MetricSet,
-  PassReport,
-  Preset,
-  RunStatus,
-  SandboxCheck,
-  SimResult,
-  Variant,
-} from "@/lib/contracts";
+import type { BenchmarkComparison, ExternalSimResult, LoopNode, MetricSet, PassReport, Preset, RunStatus, SandboxCheck, SimResult, Variant } from "@/lib/contracts";
 import {
+  canConfirmReviewedObjective,
   canTriggerRevision,
   type ExternalImportMode,
   formatTargetSummary,
@@ -30,7 +21,8 @@ export interface ControlDeckProps {
   readonly objectiveDraft: ObjectiveDraftState;
   readonly onUpdateDraftText: (text: string, presetId?: string | null) => void;
   readonly onSelectPreset: (preset: Preset) => void;
-  readonly onRequestConfirmObjective: () => void;
+  readonly onReviewObjective: () => void;
+  readonly onConfirmObjective: () => void;
   readonly onExecuteRevision: () => void;
   readonly loopNodes: readonly LoopNode[];
   readonly latestRevision: number;
@@ -42,6 +34,7 @@ export interface ControlDeckProps {
   readonly baseMetrics: MetricSet | null;
   readonly sim: SimResult | null;
   readonly baseSim: SimResult | null;
+  readonly externalSim?: ExternalSimResult | null;
   readonly sandbox: SandboxCheck | null;
   readonly benchmarks: readonly BenchmarkComparison[];
   readonly onRunMatlabOnline: () => void;
@@ -49,6 +42,7 @@ export interface ControlDeckProps {
   readonly onImportExternalFiles: (mode: ExternalImportMode, files: readonly File[]) => void;
   readonly onStartNextRound: () => void;
   readonly matlabWaitingExpiry: string | null;
+  readonly matlabCommand?: string | null;
   readonly externalImported: boolean;
   readonly errorBanner: StratumError | null;
 }
@@ -59,14 +53,18 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
   const [importMode, setImportMode] = React.useState<ExternalImportMode>("simulink");
   const [uploadError, setUploadError] = React.useState<string | null>(null);
 
+  const reviewReady = canConfirmReviewedObjective(props.objectiveDraft);
   const reviseAllowed = canTriggerRevision(props.objectiveDraft, appConfig.maxRevision, props.runStatus);
   const atMaxRevision = props.latestRevision >= appConfig.maxRevision;
 
   React.useEffect(() => {
     if (props.errorBanner?.code === "CONFIRMATION_REQUIRED_409") {
+      if (!reviewReady && props.objectiveDraft.text.trim()) {
+        props.onReviewObjective();
+      }
       setConfirmModalOpen(true);
     }
-  }, [props.errorBanner]);
+  }, [props.errorBanner, reviewReady, props.objectiveDraft.text, props.onReviewObjective]);
 
   const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const fileList = e.target.files ? Array.from(e.target.files) : [];
@@ -79,9 +77,14 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
     props.onImportExternalFiles(importMode, fileList);
   };
 
+  const activeTargets = props.objectiveDraft.targets.length > 0
+    ? props.objectiveDraft.targets
+    : (props.presets[0]?.targets ?? []);
+
   return (
     <footer
       data-testid="control-deck"
+      data-objective-hash={props.objectiveDraft.objectiveHash ?? "none"}
       aria-label="Bottom Control Deck"
       className="pointer-events-auto z-20 flex w-full flex-col gap-2 border-t border-hairline bg-panel/95 px-4 py-2.5"
     >
@@ -94,6 +97,7 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
         onDownloadBridgeZip={props.onDownloadBridgeZip}
         onToggleImportDrawer={() => setImportDrawerOpen((prev) => !prev)}
         matlabWaitingExpiry={props.matlabWaitingExpiry}
+        matlabCommand={props.matlabCommand}
       />
       {props.errorBanner && (
         <div data-testid="deck-error-banner" className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-danger bg-danger/15 px-3 py-1.5 font-mono text-xs text-danger">
@@ -130,9 +134,9 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
             variant="outline"
             data-testid="open-confirm-modal-button"
             disabled={!props.objectiveDraft.text.trim() || atMaxRevision}
-            onClick={() => { props.onRequestConfirmObjective(); setConfirmModalOpen(true); }}
+            onClick={() => { props.onReviewObjective(); setConfirmModalOpen(true); }}
           >
-            Confirm Objective
+            Review Objective
           </Button>
           <Button
             size="sm"
@@ -161,10 +165,10 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
         </div>
       )}
       {Boolean(props.passes.length > 0 || props.metrics || props.sim) && (
-        <RevisionPanel variants={props.variants} passes={props.passes} metrics={props.metrics} baseMetrics={props.baseMetrics} sim={props.sim} baseSim={props.baseSim} sandbox={props.sandbox} benchmarks={props.benchmarks} />
+        <RevisionPanel variants={props.variants} passes={props.passes} metrics={props.metrics} baseMetrics={props.baseMetrics} sim={props.sim} baseSim={props.baseSim} externalSim={props.externalSim} externalImported={props.externalImported} targets={activeTargets} sandbox={props.sandbox} benchmarks={props.benchmarks} />
       )}
       {confirmModalOpen && (
-        <div data-testid="objective-confirm-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-bg/85 p-4">
+        <div data-testid="objective-confirm-modal" data-objective-hash={props.objectiveDraft.objectiveHash ?? "none"} className="fixed inset-0 z-50 flex items-center justify-center bg-bg/85 p-4">
           <div className="flex w-full max-w-md flex-col gap-3 rounded-sm border border-amber bg-panel p-4 font-mono text-xs">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-amber">Is this what you want to improve?</span>
@@ -172,16 +176,14 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
             </div>
             <p className="text-text">{props.objectiveDraft.text}</p>
             <div data-testid="confirm-targets-list" className="flex flex-col gap-1 border-t border-hairline pt-2">
-              {props.objectiveDraft.targets.map((t) => <div key={t.metric_id} className="text-confirm">• {formatTargetSummary(t)}</div>)}
+              {props.objectiveDraft.targets.map((t) => <div key={t.metric_id} className="text-confirm">• {formatTargetSummary(t, props.objectiveDraft.baseRevision)}</div>)}
               <div className="text-dim">Constraint: Immutable base V{props.objectiveDraft.baseRevision} → V{props.objectiveDraft.baseRevision + 1} (max V{appConfig.maxRevision})</div>
             </div>
             {props.errorBanner?.code === "CONFIRMATION_REQUIRED_409" && (
-              <div data-testid="modal-409-recovery" className="rounded-sm border border-danger bg-danger/15 p-2 text-danger">
-                {props.errorBanner.recoveryHint}
-              </div>
+              <div data-testid="modal-409-recovery" className="rounded-sm border border-danger bg-danger/15 p-2 text-danger">{props.errorBanner.recoveryHint}</div>
             )}
             <div className="flex items-center justify-between gap-2 pt-1">
-              <Button size="sm" variant="confirm" data-testid="modal-confirm-button" onClick={props.onRequestConfirmObjective}>
+              <Button size="sm" variant="confirm" data-testid="modal-confirm-button" disabled={!reviewReady} onClick={props.onConfirmObjective}>
                 {props.objectiveDraft.confirmToken ? "Objective Confirmed" : "Confirm Objective"}
               </Button>
               <Button size="sm" variant="outline" data-testid="modal-close-button" onClick={() => setConfirmModalOpen(false)}>Close</Button>
