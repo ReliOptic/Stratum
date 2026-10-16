@@ -52,12 +52,14 @@ def test_compiler_primitives_and_modifiers() -> None:
 
 
 def test_compiler_rejects_unknown_op_and_thin_wall() -> None:
-    """Verify unknown op and wall < 0.2 mm raise CadOpInvalid with part_id and op_index."""
+    """Verify unknown op and wall < 0.2 mm raise CadOpInvalid with actionable LLM repair hints."""
     bad_op = Part("bad_part", "other", [CadOp("eval_code", {"x_mm": 10.0})])
     try:
         compile_parts([bad_op])
     except CadOpInvalid as exc:
         assert exc.part_id == "bad_part" and exc.op_index == 0
+        assert "Change part 'bad_part' cad_ops[0].op from 'eval_code' to one of" in exc.recovery_hint
+        assert "Repair hint:" in str(exc)
     else:
         raise AssertionError("Expected CadOpInvalid")
 
@@ -70,18 +72,23 @@ def test_compiler_rejects_unknown_op_and_thin_wall() -> None:
         compile_parts([thin])
     except CadOpInvalid as exc:
         assert exc.part_id == "thin_shell" and exc.op_index == 1
+        assert "[0.2, 2000.0] mm" in exc.recovery_hint
+        assert "wall_mm" in str(exc) and "Repair hint:" in str(exc)
     else:
         raise AssertionError("Expected CadOpInvalid")
 
 
 def test_pairwise_interference_undeclared_fails_declared_warns() -> None:
-    """Undeclared overlap raises CheckFailed; declared nested_in passes with warn."""
+    """Undeclared overlap raises CheckFailed with actionable shift hint; declared nested_in passes."""
     p1 = Part("block_a", "structural_frame", [CadOp("box", {"x_mm": 20.0, "y_mm": 20.0, "z_mm": 20.0})])
     p2_bad = Part("block_b", "heat_source", [CadOp("box", {"x_mm": 10.0, "y_mm": 10.0, "z_mm": 10.0})])
     try:
         compile_parts([p1, p2_bad])
     except CheckFailed as exc:
         assert exc.code == "CHECK_FAILED"
+        assert "block_a<->block_b" in exc.recovery_hint
+        assert "placement." in exc.recovery_hint and "nested_in='block_a'" in exc.recovery_hint
+        assert "Repair hint:" in str(exc)
     else:
         raise AssertionError("Expected CheckFailed")
 
@@ -89,6 +96,7 @@ def test_pairwise_interference_undeclared_fails_declared_warns() -> None:
     res = compile_parts([p1, p2_ok])
     assert res.manifest.checks["pairwise_interference"].passed is True
     assert res.manifest.checks["pairwise_interference"].severity == "warn"
+
 
 
 def test_glb_yup_conversion_and_node_names() -> None:

@@ -14,25 +14,15 @@ from stratum_cad.config import CONFIG
 from stratum_cad.errors import CheckFailed, CompileFailed
 from stratum_cad.logging_utils import log_event
 from stratum_cad.ops import build_part_solid
-from stratum_cad.types import (
-    CheckResult,
-    CompileResult,
-    Manifest,
-    Part,
-    PartManifestEntry,
-)
+from stratum_cad.types import CheckResult, CompileResult, Manifest, Part, PartManifestEntry
 
 
 def _solid_to_yup_trimesh(solid: Solid) -> trimesh.Trimesh:
-    """Tessellate a Z-up build123d Solid (mm) into a Y-up trimesh.Trimesh (mm).
-
-    Coordinate conversion: (x_glb, y_glb, z_glb) = (x_cad, z_cad, -y_cad).
-    """
+    """Tessellate a Z-up build123d Solid (mm) into a Y-up trimesh.Trimesh (mm)."""
     verts_raw, faces_raw = solid.tessellate(tolerance=0.1)
     verts_zup = np.array([[float(v.X), float(v.Y), float(v.Z)] for v in verts_raw], dtype=np.float64)
     verts_yup = np.column_stack((verts_zup[:, 0], verts_zup[:, 2], -verts_zup[:, 1]))
-    faces = np.array(faces_raw, dtype=np.int64)
-    return trimesh.Trimesh(vertices=verts_yup, faces=faces, process=False)
+    return trimesh.Trimesh(vertices=verts_yup, faces=np.array(faces_raw, dtype=np.int64), process=False)
 
 
 def _export_and_verify_glb(solids: list[tuple[Part, Solid]]) -> tuple[bytes, CheckResult]:
@@ -44,15 +34,14 @@ def _export_and_verify_glb(solids: list[tuple[Part, Solid]]) -> tuple[bytes, Che
     glb_bytes = raw_glb if isinstance(raw_glb, bytes) else bytes(raw_glb)
 
     loaded = trimesh.load(trimesh.util.wrap_as_stream(glb_bytes), file_type="glb")
-    expected_ids = [p.part_id for p, _ in solids]
     node_names = set(loaded.graph.nodes) if isinstance(loaded, trimesh.Scene) else set()
-    missing = [pid for pid in expected_ids if pid not in node_names]
+    missing = [p.part_id for p, _ in solids if p.part_id not in node_names]
     passed = len(missing) == 0
     return glb_bytes, CheckResult(
         check_id="glb_nodes_match",
         passed=passed,
         part_ids=missing,
-        details="All part_ids present in GLB (Y-up, mm)" if passed else f"Missing GLB nodes: {missing}",
+        details="All part_ids present in GLB (Y-up, mm)" if passed else f"Missing GLB nodes: {missing}. Ensure each part produces a non-empty mesh.",
     )
 
 
@@ -71,20 +60,17 @@ def _export_and_verify_step(solids: list[tuple[Part, Solid]]) -> tuple[bytes, Ch
             check_id="step_roundtrip",
             passed=False,
             part_ids=[p.part_id for p, _ in solids],
-            details=f"STEP solid count mismatch: expected {len(solids)}, got {len(imported_solids)}",
+            details=f"STEP solid count mismatch: expected {len(solids)}, got {len(imported_solids)}. Avoid boolean cuts that split a part into disconnected solids.",
         )
     orig_vols = sorted(float(s.volume) for _, s in solids)
     imp_vols = sorted(float(s.volume) for s in imported_solids)
-    max_rel_err = max(
-        abs(v_imp - v_orig) / max(v_orig, 1e-9)
-        for v_orig, v_imp in zip(orig_vols, imp_vols, strict=True)
-    )
+    max_rel_err = max(abs(v_i - v_o) / max(v_o, 1e-9) for v_o, v_i in zip(orig_vols, imp_vols, strict=True))
     passed = max_rel_err <= CONFIG.step_vol_tol_ratio
     return step_bytes, CheckResult(
         check_id="step_roundtrip",
         passed=passed,
         value=round(max_rel_err, 6),
-        details=f"Max relative volume error {max_rel_err:.5f} (limit {CONFIG.step_vol_tol_ratio})",
+        details=f"Max relative volume error {max_rel_err:.5f} (allowed range: [0.0, {CONFIG.step_vol_tol_ratio}])",
     )
 
 
@@ -92,6 +78,7 @@ def _check_pairwise_interference(solids: list[tuple[Part, Solid]]) -> CheckResul
     """Compute pairwise solid overlap volume; warn (not fail) for declared nesting."""
     undeclared: list[str] = []
     declared: list[str] = []
+    hints: list[str] = []
     max_overlap = 0.0
     bbs = [s.bounding_box() for _, s in solids]
     for i, (p_a, s_a) in enumerate(solids):
@@ -114,13 +101,18 @@ def _check_pairwise_interference(solids: list[tuple[Part, Solid]]) -> CheckResul
             if ov > 1e-3:
                 max_overlap = max(max_overlap, ov)
                 undeclared.append(tag)
+                axis, shift = min(("x", ox), ("y", oy), ("z", oz), key=lambda t: t[1])
+                hints.append(
+                    f"{tag} overlap={ov:.2f} mm3 (allowed: 0.0 mm3): shift '{p_b.part_id}' placement.{axis} by >= {shift:.2f} mm "
+                    f"(clearance >= 0.0 mm) or set nested_in='{p_a.part_id}'"
+                )
     if undeclared:
         return CheckResult(
             check_id="pairwise_interference",
             passed=False,
             part_ids=undeclared,
             value=round(max_overlap, 4),
-            details=f"Undeclared solid interference ({round(max_overlap, 2)} mm3): {undeclared}",
+            details="Undeclared solid interference: " + "; ".join(hints),
         )
     return CheckResult(
         check_id="pairwise_interference",
@@ -135,7 +127,10 @@ def _check_pairwise_interference(solids: list[tuple[Part, Solid]]) -> CheckResul
 def compile_parts(parts: list[Part], *, run_id: str = "widget-a", revision: int = 0) -> CompileResult:
     """Compile a list of Part definitions into STEP bytes, GLB bytes, and a checked Manifest."""
     if not parts:
-        raise CompileFailed("Cannot compile empty parts list.", recovery_hint="Provide at least one Part.")
+        raise CompileFailed(
+            "Cannot compile empty parts list (got 0 parts, allowed: >= 1).",
+            recovery_hint="Provide at least one Part in parts list (allowed part count: >= 1).",
+        )
     from stratum_cad.adapters import adapt_parts
 
     internal_parts = adapt_parts(parts)
@@ -172,17 +167,28 @@ def compile_parts(parts: list[Part], *, run_id: str = "widget-a", revision: int 
     step_bytes, step_check = _export_and_verify_step(solids)
     glb_bytes, glb_check = _export_and_verify_glb(solids)
     checks: dict[str, CheckResult] = {
-        "valid_solid": CheckResult(check_id="valid_solid", passed=not invalid_ids, part_ids=invalid_ids),
-        "nonzero_volume": CheckResult(check_id="nonzero_volume", passed=not zero_vol_ids, part_ids=zero_vol_ids),
+        "valid_solid": CheckResult(
+            check_id="valid_solid",
+            passed=not invalid_ids,
+            part_ids=invalid_ids,
+            details=f"Invalid solids: {invalid_ids}. Ensure cuts do not self-intersect." if invalid_ids else "All solids valid",
+        ),
+        "nonzero_volume": CheckResult(
+            check_id="nonzero_volume",
+            passed=not zero_vol_ids,
+            part_ids=zero_vol_ids,
+            details=f"Zero-volume parts: {zero_vol_ids} (allowed volume: > 0.0 mm3). Reduce cut_box/cut_cylinder dimensions." if zero_vol_ids else "All volumes > 0",
+        ),
         "step_roundtrip": step_check,
         "glb_nodes_match": glb_check,
         "pairwise_interference": _check_pairwise_interference(solids),
     }
     failed = [cid for cid, chk in checks.items() if not chk.passed]
     if failed:
+        detail_msgs = "; ".join(f"{cid}: {checks[cid].details}" for cid in failed)
         raise CheckFailed(
-            f"CAD verification checks failed: {failed}",
-            recovery_hint="Inspect overlapping parts or invalid geometry operations.",
+            f"CAD verification checks failed ({failed}): {detail_msgs}",
+            recovery_hint=detail_msgs,
             part_id=checks[failed[0]].part_ids[0] if checks[failed[0]].part_ids else None,
         )
     manifest = Manifest(
@@ -195,3 +201,4 @@ def compile_parts(parts: list[Part], *, run_id: str = "widget-a", revision: int 
     )
     log_event("compile_parts_ok", run_id=run_id, stage="compile", part_count=len(parts))
     return CompileResult(step_bytes=step_bytes, glb_bytes=glb_bytes, manifest=manifest)
+
