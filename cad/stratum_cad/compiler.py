@@ -28,7 +28,7 @@ def _solid_to_yup_trimesh(solid: Solid) -> trimesh.Trimesh:
 
     Coordinate conversion: (x_glb, y_glb, z_glb) = (x_cad, z_cad, -y_cad).
     """
-    verts_raw, faces_raw = solid.tessellate(tolerance=0.05)
+    verts_raw, faces_raw = solid.tessellate(tolerance=0.1)
     verts_zup = np.array([[float(v.X), float(v.Y), float(v.Z)] for v in verts_raw], dtype=np.float64)
     verts_yup = np.column_stack((verts_zup[:, 0], verts_zup[:, 2], -verts_zup[:, 1]))
     faces = np.array(faces_raw, dtype=np.int64)
@@ -93,32 +93,34 @@ def _check_pairwise_interference(solids: list[tuple[Part, Solid]]) -> CheckResul
     undeclared: list[str] = []
     declared: list[str] = []
     max_overlap = 0.0
+    bbs = [s.bounding_box() for _, s in solids]
     for i, (p_a, s_a) in enumerate(solids):
-        bb_a = s_a.bounding_box()
-        for p_b, s_b in solids[i + 1 :]:
-            bb_b = s_b.bounding_box()
-            if (
-                bb_a.max.X <= bb_b.min.X or bb_b.max.X <= bb_a.min.X
-                or bb_a.max.Y <= bb_b.min.Y or bb_b.max.Y <= bb_a.min.Y
-                or bb_a.max.Z <= bb_b.min.Z or bb_b.max.Z <= bb_a.min.Z
-            ):
+        bb_a = bbs[i]
+        for j in range(i + 1, len(solids)):
+            p_b, s_b, bb_b = solids[j][0], solids[j][1], bbs[j]
+            ox = min(bb_a.max.X, bb_b.max.X) - max(bb_a.min.X, bb_b.min.X)
+            oy = min(bb_a.max.Y, bb_b.max.Y) - max(bb_a.min.Y, bb_b.min.Y)
+            oz = min(bb_a.max.Z, bb_b.max.Z) - max(bb_a.min.Z, bb_b.min.Z)
+            if ox <= 1e-3 or oy <= 1e-3 or oz <= 1e-3:
+                continue
+            is_decl = p_a.nested_in in (p_b.part_id, "*") or p_b.nested_in in (p_a.part_id, "*")
+            tag = f"{p_a.part_id}<->{p_b.part_id}"
+            if is_decl:
+                declared.append(tag)
+                max_overlap = max(max_overlap, min(ox * oy * oz, float(s_a.volume), float(s_b.volume)))
                 continue
             common = s_a.intersect(s_b)
             ov = sum(float(s.volume) for s in common.solids()) if common else 0.0
             if ov > 1e-3:
                 max_overlap = max(max_overlap, ov)
-                tag = f"{p_a.part_id}<->{p_b.part_id}"
-                if p_a.nested_in in (p_b.part_id, "*") or p_b.nested_in in (p_a.part_id, "*"):
-                    declared.append(tag)
-                else:
-                    undeclared.append(tag)
+                undeclared.append(tag)
     if undeclared:
         return CheckResult(
             check_id="pairwise_interference",
             passed=False,
             part_ids=undeclared,
             value=round(max_overlap, 4),
-            details=f"Undeclared solid interference: {undeclared}",
+            details=f"Undeclared solid interference ({round(max_overlap, 2)} mm3): {undeclared}",
         )
     return CheckResult(
         check_id="pairwise_interference",

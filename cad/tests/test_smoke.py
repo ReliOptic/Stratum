@@ -124,3 +124,26 @@ def test_contract_adapter_roundtrip_widget_a() -> None:
     assert len(cm.MetricSet.model_validate_json(c_metrics.model_dump_json()).values) == 8
     assert len(cm.SimResult.model_validate_json(c_sim.model_dump_json()).nodes) == 4
 
+
+def test_realistic_15_part_slim_assembly_under_5s() -> None:
+    """Verify 15-part slim assembly compiles, computes metrics, and simulates under 5 s total."""
+    import time
+    from stratum_cad import compute_metrics, simulate
+    from stratum_cad.fixtures import make_widget_a_slim_15_spec
+
+    spec = make_widget_a_slim_15_spec(duration_s=300.0)
+    assert len(spec.parts) == 15
+    t0 = time.perf_counter()
+    comp = compile_parts(spec.parts, run_id=spec.run_id, revision=spec.revision)
+    t_compile = time.perf_counter() - t0
+    mset = compute_metrics(spec, comp.manifest)
+    t_metrics = time.perf_counter() - t0 - t_compile
+    sim_res = simulate(spec, comp.manifest)
+    t_total = time.perf_counter() - t0
+
+    assert t_total < 5.0, f"Expected < 5.0 s total, got {t_total:.3f} s"
+    assert len(comp.manifest.parts) == 15
+    assert mset.metrics["min_enclosure_wall_mm"].value == 0.9
+    assert mset.metrics["peak_storage_temp_rise_C"].value is not None
+    assert sim_res.peak_storage_temp_rise_c is not None and sim_res.peak_storage_temp_rise_c > 0.0
+

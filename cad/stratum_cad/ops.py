@@ -126,14 +126,27 @@ def _apply_op(current: Solid | None, cad_op: CadOp, part_id: str, idx: int) -> S
         )
     if cad_op.op == "shell":
         w = _get_dim(p, ("wall_mm", "thickness_mm"), part_id, idx)
-        open_face = str(p.get("open_face", "none")).lower()
-        if open_face == "top":
-            top_face = current.faces().sort_by(Axis.Z)[-1]
-            shelled = offset(current, amount=-w, openings=[top_face])
-        else:
+        bb = current.bounding_box()
+        spans = (bb.max.X - bb.min.X, bb.max.Y - bb.min.Y, bb.max.Z - bb.min.Z)
+        min_span = min(spans)
+        is_open_top = str(p.get("open_face", "none")).lower() in {"top", "1", "1.0", "+z"}
+        max_w = round((min_span if is_open_top and min_span == spans[2] else 0.5 * min_span) - 0.1, 3)
+        if w > max_w:
+            raise CadOpInvalid(
+                f"Shell wall_mm={w} mm exceeds cavity limit {max_w} mm for solid span {min_span:.2f} mm.",
+                recovery_hint=f"Set 'wall_mm' in [{CONFIG.min_wall_mm}, {max(CONFIG.min_wall_mm, max_w)}] mm or enlarge primitive dimensions.",
+                part_id=part_id,
+                op_index=idx,
+            )
+        if len(current.faces()) <= 3:
             inner = offset(current, amount=-w)
-            shelled = current - inner
-        return shelled.solids()[0]
+            cutter = Location((0.0, 0.0, w)) * inner if is_open_top else inner
+            return (current - cutter).solids()[0]
+        dx_i, dy_i = max(spans[0] - 2.0 * w, CONFIG.min_dim_mm), max(spans[1] - 2.0 * w, CONFIG.min_dim_mm)
+        dz_i = max(spans[2] - (w if is_open_top else 2.0 * w), CONFIG.min_dim_mm)
+        cz_i = 0.5 * (bb.min.Z + bb.max.Z) + (0.5 * w if is_open_top else 0.0)
+        cav = Location((0.5 * (bb.min.X + bb.max.X), 0.5 * (bb.min.Y + bb.max.Y), cz_i)) * Box(dx_i, dy_i, dz_i)
+        return (current - cav).solids()[0]
     if cad_op.op == "cut_box":
         dx = _get_dim(p, ("x_mm", "length_mm", "dx_mm"), part_id, idx)
         dy = _get_dim(p, ("y_mm", "width_mm", "dy_mm"), part_id, idx)
@@ -145,7 +158,7 @@ def _apply_op(current: Solid | None, cad_op: CadOp, part_id: str, idx: int) -> S
     h = _get_dim(p, ("height_mm", "h_mm", "z_mm"), part_id, idx)
     cx, cy, cz = float(p.get("cx_mm", 0.0)), float(p.get("cy_mm", 0.0)), float(p.get("cz_mm", 0.0))
     axis = str(p.get("axis", "z")).lower()
-    rot = Rotation(0, 90, 0) if axis == "x" else (Rotation(90, 0, 0) if axis == "y" else Rotation(0, 0, 0))
+    rot = Rotation(0, 90, 0) if axis in {"x", "0", "0.0"} else (Rotation(90, 0, 0) if axis in {"y", "1", "1.0"} else Rotation(0, 0, 0))
     cutter = Location((cx, cy, cz)) * rot * Cylinder(r, h)
     return (current - cutter).solids()[0]
 

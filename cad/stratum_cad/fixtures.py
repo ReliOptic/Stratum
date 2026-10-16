@@ -85,3 +85,62 @@ def make_widget_a_spec(revision: int = 0, duration_s: float = 120.0) -> Engineer
         duration_s=duration_s,
         dt_s=1.0,
     )
+
+
+def make_widget_a_slim_15_parts() -> list[Part]:
+    """Return a synthetic 15-part slim assembly (0.8-1.5 mm walls, flat storage, coil heat source, spreader)."""
+    return [
+        Part("enc_lower", "enclosure", [
+            CadOp("rounded_box", {"dx_mm": 92.0, "dy_mm": 58.0, "dz_mm": 9.0, "fillet_mm": 2.0}),
+            CadOp("shell", {"wall_mm": 1.2, "open_face": 1.0}),
+            CadOp("cut_box", {"dx_mm": 14.0, "dy_mm": 4.0, "dz_mm": 3.0, "cy_mm": 29.0, "cz_mm": 1.0}),
+        ], Placement(0.0, 0.0, -0.5), material="abs_plastic"),
+        Part("enc_upper", "enclosure", [
+            CadOp("rounded_box", {"dx_mm": 92.0, "dy_mm": 58.0, "dz_mm": 0.9, "fillet_mm": 2.0}),
+        ], Placement(0.0, 0.0, 4.45), material="polycarbonate", nested_in="enc_lower"),
+        Part("contact_pad_top", "user_contact_surface", [
+            CadOp("rounded_box", {"dx_mm": 84.0, "dy_mm": 50.0, "dz_mm": 0.8, "fillet_mm": 2.0}),
+        ], Placement(0.0, 0.0, 5.35), material="silicone_pad"),
+        Part("heat_coil_primary", "heat_source", [
+            CadOp("cylinder", {"radius_mm": 15.0, "height_mm": 1.4}),
+            CadOp("cut_cylinder", {"radius_mm": 6.0, "height_mm": 2.0}),
+        ], Placement(16.0, 0.0, 2.8), material="copper_c110", nested_in="enc_lower", power_w=2.8),
+        Part("heat_driver_stage", "heat_source", [
+            CadOp("box", {"dx_mm": 10.0, "dy_mm": 8.0, "dz_mm": 1.4}),
+        ], Placement(-28.0, 12.0, 2.2), material="copper_fr4", nested_in="enc_lower", power_w=1.4),
+        Part("mag_ferrite_shield", "magnetic", [
+            CadOp("cylinder", {"radius_mm": 16.0, "height_mm": 0.8}),
+        ], Placement(16.0, 0.0, 1.5), material="ferrite_ceramic", nested_in="enc_lower"),
+        Part("spreader_sheet_main", "thermal_spreader", [
+            CadOp("box", {"dx_mm": 78.0, "dy_mm": 48.0, "dz_mm": 0.4}),
+        ], Placement(0.0, 0.0, 0.7), material="graphite_sheet", nested_in="enc_lower"),
+        Part("spreader_pad_aux", "thermal_spreader", [
+            CadOp("box", {"dx_mm": 22.0, "dy_mm": 16.0, "dz_mm": 0.5}),
+        ], Placement(-28.0, 12.0, 1.2), material="copper_c110", nested_in="enc_lower"),
+        Part("storage_cell_main", "energy_storage", [
+            CadOp("box", {"dx_mm": 52.0, "dy_mm": 44.0, "dz_mm": 2.8}),
+        ], Placement(12.0, 0.0, -1.2), material="layered_pouch", nested_in="enc_lower"),
+        Part("storage_cell_aux", "energy_storage", [
+            CadOp("box", {"dx_mm": 52.0, "dy_mm": 44.0, "dz_mm": 1.2}),
+        ], Placement(12.0, 0.0, -3.3), material="layered_pouch", nested_in="enc_lower"),
+        Part("pwr_board_main", "power_conversion", [
+            CadOp("box", {"dx_mm": 18.0, "dy_mm": 44.0, "dz_mm": 1.2}),
+        ], Placement(-28.0, 0.0, -0.2), material="copper_fr4", nested_in="enc_lower", power_w=0.6),
+        Part("frame_mid_rib", "structural_frame", [
+            CadOp("box", {"dx_mm": 2.0, "dy_mm": 48.0, "dz_mm": 3.0}),
+        ], Placement(-15.5, 0.0, -1.8), material="aluminum_6061", nested_in="enc_lower"),
+        Part("io_port_housing", "connector", [
+            CadOp("box", {"dx_mm": 7.0, "dy_mm": 6.0, "dz_mm": 2.4}),
+        ], Placement(-41.0, 0.0, -1.8), material="stainless_steel", nested_in="enc_lower"),
+        Part("fastener_post_nw", "fastener", [
+            CadOp("cylinder", {"radius_mm": 1.5, "height_mm": 3.0}),
+        ], Placement(-41.0, 23.0, -1.8), material="steel_1018", nested_in="enc_lower"),
+        Part("fastener_post_se", "fastener", [
+            CadOp("cylinder", {"radius_mm": 1.5, "height_mm": 3.0}),
+        ], Placement(41.0, -23.0, -1.8), material="steel_1018", nested_in="enc_lower"),
+    ]
+
+
+def make_widget_a_slim_15_spec(duration_s: float = 300.0) -> EngineeringSpec:
+    """Build synthetic 15-part slim widget-a EngineeringSpec."""
+    return EngineeringSpec(parts=make_widget_a_slim_15_parts(), run_id="widget-a", revision=0, duration_s=duration_s)
