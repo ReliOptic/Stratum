@@ -4,12 +4,12 @@ import { RevisionPanel } from "@/components/RevisionPanel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { appConfig } from "@/lib/config";
+import { describeTargetDirection } from "@/lib/connectivity";
 import type { BenchmarkComparison, ExternalSimResult, LoopNode, MetricSet, PassReport, Preset, RunStatus, SandboxCheck, SimResult, Variant } from "@/lib/contracts";
 import {
   canConfirmReviewedObjective,
   canTriggerRevision,
   type ExternalImportMode,
-  formatTargetSummary,
   type ObjectiveDraftState,
   validateExternalResultsUpload,
 } from "@/lib/state";
@@ -22,7 +22,7 @@ export interface ControlDeckProps {
   readonly onUpdateDraftText: (text: string, presetId?: string | null) => void;
   readonly onSelectPreset: (preset: Preset) => void;
   readonly onReviewObjective: () => void;
-  readonly onConfirmObjective: () => void;
+  readonly onConfirmObjective: () => Promise<boolean> | void;
   readonly onExecuteRevision: () => void;
   readonly loopNodes: readonly LoopNode[];
   readonly latestRevision: number;
@@ -56,12 +56,11 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
   const reviewReady = canConfirmReviewedObjective(props.objectiveDraft);
   const reviseAllowed = canTriggerRevision(props.objectiveDraft, appConfig.maxRevision, props.runStatus);
   const atMaxRevision = props.latestRevision >= appConfig.maxRevision;
+  const refMetrics = props.metrics ?? props.baseMetrics;
 
   React.useEffect(() => {
     if (props.errorBanner?.code === "CONFIRMATION_REQUIRED_409") {
-      if (!reviewReady && props.objectiveDraft.text.trim()) {
-        props.onReviewObjective();
-      }
+      if (!reviewReady && props.objectiveDraft.text.trim()) props.onReviewObjective();
       setConfirmModalOpen(true);
     }
   }, [props.errorBanner, reviewReady, props.objectiveDraft.text, props.onReviewObjective]);
@@ -77,16 +76,14 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
     props.onImportExternalFiles(importMode, fileList);
   };
 
-  const activeTargets = props.objectiveDraft.targets.length > 0
-    ? props.objectiveDraft.targets
-    : (props.presets[0]?.targets ?? []);
+  const activeTargets = props.objectiveDraft.targets.length > 0 ? props.objectiveDraft.targets : (props.presets[0]?.targets ?? []);
 
   return (
     <footer
       data-testid="control-deck"
       data-objective-hash={props.objectiveDraft.objectiveHash ?? "none"}
       aria-label="Bottom Control Deck"
-      className="pointer-events-auto z-20 flex w-full flex-col gap-2 border-t border-hairline bg-panel/95 px-4 py-2.5"
+      className="pointer-events-auto z-40 flex w-full flex-col gap-2.5 bg-panel px-5 py-3 transition-all duration-200 ease-out"
     >
       <LoopStrip
         loopNodes={props.loopNodes}
@@ -98,26 +95,32 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
         onToggleImportDrawer={() => setImportDrawerOpen((prev) => !prev)}
         matlabWaitingExpiry={props.matlabWaitingExpiry}
         matlabCommand={props.matlabCommand}
+        externalImported={props.externalImported}
       />
       {props.errorBanner && (
-        <div data-testid="deck-error-banner" className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-danger bg-danger/15 px-3 py-1.5 font-mono text-xs text-danger">
-          <span>[{props.errorBanner.code}] {props.errorBanner.message}</span>
+        <div data-testid="deck-error-banner" className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-danger/15 px-3 py-1.5 font-sans text-xs text-danger">
+          <span className="font-mono">[{props.errorBanner.code}] {props.errorBanner.message}</span>
           <span className="text-text">{props.errorBanner.recoveryHint}</span>
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-1.5">
-          {props.presets.map((p) => (
-            <Button
-              key={p.preset_id}
-              size="sm"
-              variant={props.objectiveDraft.selectedPresetId === p.preset_id ? "default" : "outline"}
-              data-testid={`preset-${p.preset_id}`}
-              onClick={() => { props.onSelectPreset(p); setConfirmModalOpen(true); }}
-            >
-              {p.title}
-            </Button>
-          ))}
+          {props.presets.map((p) => {
+            const unsafe = p.targets.some((t) => !describeTargetDirection(t, refMetrics).safer);
+            return (
+              <Button
+                key={p.preset_id}
+                size="sm"
+                variant={props.objectiveDraft.selectedPresetId === p.preset_id ? "default" : "outline"}
+                data-testid={`preset-${p.preset_id}`}
+                onClick={() => { props.onSelectPreset(p); setConfirmModalOpen(true); }}
+                className="flex items-center gap-1.5"
+              >
+                <span>{p.title}</span>
+                {unsafe && <Badge variant="danger" data-testid={`preset-direction-warning-${p.preset_id}`}>direction check</Badge>}
+              </Button>
+            );
+          })}
         </div>
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <input
@@ -127,24 +130,12 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
             onChange={(e) => props.onUpdateDraftText(e.target.value, null)}
             placeholder="Specify engineering improvement objective..."
             aria-label="Engineering improvement objective"
-            className="h-8 min-w-48 flex-1 rounded-sm border border-hairline bg-bg px-3 font-mono text-xs text-text placeholder:text-dim focus:border-amber focus:outline-none"
+            className="h-8 min-w-48 flex-1 rounded-md bg-bg px-3 font-sans text-xs text-text placeholder:text-dim focus:outline-none"
           />
-          <Button
-            size="sm"
-            variant="outline"
-            data-testid="open-confirm-modal-button"
-            disabled={!props.objectiveDraft.text.trim() || atMaxRevision}
-            onClick={() => { props.onReviewObjective(); setConfirmModalOpen(true); }}
-          >
+          <Button size="sm" variant="outline" data-testid="open-confirm-modal-button" disabled={!props.objectiveDraft.text.trim() || atMaxRevision} onClick={() => { props.onReviewObjective(); setConfirmModalOpen(true); }}>
             Review Objective
           </Button>
-          <Button
-            size="sm"
-            variant="confirm"
-            data-testid="revise-button"
-            disabled={!reviseAllowed || atMaxRevision}
-            onClick={props.onExecuteRevision}
-          >
+          <Button size="sm" variant="confirm" data-testid="revise-button" disabled={!reviseAllowed || atMaxRevision} onClick={props.onExecuteRevision}>
             Revise (V{props.objectiveDraft.baseRevision} → V{props.objectiveDraft.baseRevision + 1})
           </Button>
           {props.externalImported && !atMaxRevision && (
@@ -155,12 +146,12 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
         </div>
       </div>
       {importDrawerOpen && (
-        <div data-testid="import-results-drawer" className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-cyan/50 bg-bg p-2.5 font-mono text-xs">
+        <div data-testid="import-results-drawer" className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-bg p-3 font-sans text-xs">
           <div className="flex items-center gap-2">
             <Button size="sm" variant={importMode === "simulink" ? "cyan" : "outline"} data-testid="import-tab-simulink" onClick={() => setImportMode("simulink")}>Simulink</Button>
             <Button size="sm" variant={importMode === "lab" ? "cyan" : "outline"} data-testid="import-tab-lab" onClick={() => setImportMode("lab")}>Lab measurement</Button>
           </div>
-          <input type="file" multiple data-testid="external-results-file-input" onChange={handleFilesSelected} className="font-mono text-xs text-text" />
+          <input type="file" multiple data-testid="external-results-file-input" onChange={handleFilesSelected} className="font-sans text-xs text-text" />
           {uploadError && <span data-testid="upload-validation-error" className="text-danger">{uploadError}</span>}
         </div>
       )}
@@ -169,22 +160,39 @@ export function ControlDeck(props: ControlDeckProps): React.JSX.Element {
       )}
       {confirmModalOpen && (
         <div data-testid="objective-confirm-modal" data-objective-hash={props.objectiveDraft.objectiveHash ?? "none"} className="fixed inset-0 z-50 flex items-center justify-center bg-bg/85 p-4">
-          <div className="flex w-full max-w-md flex-col gap-3 rounded-sm border border-amber bg-panel p-4 font-mono text-xs">
+          <div className="flex w-full max-w-md flex-col gap-3 rounded-md bg-panel p-5 font-sans text-xs">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-amber">Is this what you want to improve?</span>
+              <span data-saira="true" className="font-semibold text-amber">Is this what you want to improve?</span>
               <Badge variant="olive">Base: V{props.objectiveDraft.baseRevision}</Badge>
             </div>
             <p className="text-text">{props.objectiveDraft.text}</p>
-            <div data-testid="confirm-targets-list" className="flex flex-col gap-1 border-t border-hairline pt-2">
-              {props.objectiveDraft.targets.map((t) => <div key={t.metric_id} className="text-confirm">• {formatTargetSummary(t, props.objectiveDraft.baseRevision)}</div>)}
-              <div className="text-dim">Constraint: Immutable base V{props.objectiveDraft.baseRevision} → V{props.objectiveDraft.baseRevision + 1} (max V{appConfig.maxRevision})</div>
+            <div data-testid="confirm-targets-list" className="flex flex-col gap-1.5 rounded-md bg-bg p-3 font-mono tabular-nums">
+              {props.objectiveDraft.targets.map((t) => {
+                const info = describeTargetDirection(t, refMetrics, props.objectiveDraft.baseRevision);
+                return (
+                  <div key={t.metric_id} data-testid={`target-direction-${t.metric_id}`} className={`flex flex-wrap items-center justify-between gap-2 ${info.safer ? "text-confirm" : "text-danger"}`}>
+                    <span>• {info.sentence}</span>
+                    {!info.safer && <Badge variant="danger" data-testid="direction-check-warning">direction check</Badge>}
+                  </div>
+                );
+              })}
+              <div className="font-sans text-dim">Constraint: Immutable base V{props.objectiveDraft.baseRevision} → V{props.objectiveDraft.baseRevision + 1} (max V{appConfig.maxRevision})</div>
             </div>
             {props.errorBanner?.code === "CONFIRMATION_REQUIRED_409" && (
-              <div data-testid="modal-409-recovery" className="rounded-sm border border-danger bg-danger/15 p-2 text-danger">{props.errorBanner.recoveryHint}</div>
+              <div data-testid="modal-409-recovery" className="rounded-md bg-danger/15 p-2.5 text-danger">{props.errorBanner.recoveryHint}</div>
             )}
             <div className="flex items-center justify-between gap-2 pt-1">
-              <Button size="sm" variant="confirm" data-testid="modal-confirm-button" disabled={!reviewReady} onClick={props.onConfirmObjective}>
-                {props.objectiveDraft.confirmToken ? "Objective Confirmed" : "Confirm Objective"}
+              <Button
+                size="sm"
+                variant="confirm"
+                data-testid="modal-confirm-button"
+                disabled={!reviewReady}
+                onClick={async () => {
+                  const ok = await props.onConfirmObjective();
+                  if (ok) setConfirmModalOpen(false);
+                }}
+              >
+                Confirm &amp; Revise (V{props.objectiveDraft.baseRevision} → V{props.objectiveDraft.baseRevision + 1})
               </Button>
               <Button size="sm" variant="outline" data-testid="modal-close-button" onClick={() => setConfirmModalOpen(false)}>Close</Button>
             </div>

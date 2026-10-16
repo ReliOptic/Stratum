@@ -81,18 +81,18 @@ export function RevisionPanel({
   }, [targets]);
 
   return (
-    <div data-testid="revision-panel" className="grid grid-cols-1 gap-3 pt-2 md:grid-cols-3">
-      <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-bg p-2.5 font-mono text-xs">
-        <span className="text-dim">PART × PASS HYPOTHESIS MATRIX</span>
+    <div data-testid="revision-panel" className="grid grid-cols-1 gap-3 pt-1 md:grid-cols-3">
+      <div className="flex flex-col gap-2 rounded-md bg-bg p-3 text-xs">
+        <span data-saira="true" className="text-dim">PART × PASS HYPOTHESIS MATRIX</span>
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3" data-testid="variant-cards">
           {variants.map((v) => (
-            <div key={v.variant_id} data-testid={`variant-card-${v.variant_id}`} data-primary={v.primary ? "true" : "false"} className={v.primary ? "flex flex-col gap-0.5 rounded-sm border border-amber bg-amber/10 px-2 py-1" : "flex flex-col gap-0.5 rounded-sm border border-hairline bg-panel px-2 py-1"}>
-              <div className="flex items-center justify-between gap-1">
+            <div key={v.variant_id} data-testid={`variant-card-${v.variant_id}`} data-primary={v.primary ? "true" : "false"} className={v.primary ? "flex flex-col gap-1 rounded-md bg-amber/15 px-2.5 py-1.5" : "flex flex-col gap-1 rounded-md bg-panel px-2.5 py-1.5"}>
+              <div className="flex items-center justify-between gap-1 font-mono tabular-nums">
                 <Badge variant={v.primary ? "amber" : "dim"}>{v.variant_id}</Badge>
-                {v.primary && <span data-testid={`variant-primary-${v.variant_id}`} className="text-xs text-amber">PRIMARY</span>}
+                {v.primary && <span data-testid={`variant-primary-${v.variant_id}`} data-saira-pill="true" className="text-amber">PRIMARY</span>}
                 {typeof v.score === "number" && <span className="text-dim">{v.score.toFixed(2)}</span>}
               </div>
-              <span className="truncate text-xs text-dim" title={v.summary}>{v.summary}</span>
+              <span className="truncate font-sans text-xs text-dim" title={v.summary}>{v.summary}</span>
             </div>
           ))}
         </div>
@@ -112,10 +112,10 @@ export function RevisionPanel({
                 onClick={() => setSelectedPass(cell)}
                 className={
                   effective === "confirmed"
-                    ? "rounded-sm border border-confirm bg-confirm/15 px-2 py-1 text-confirm"
+                    ? "rounded-sm bg-confirm/15 px-2.5 py-1 font-mono text-confirm tabular-nums transition-colors duration-150"
                     : effective === "refuted"
-                      ? "rounded-sm border border-danger bg-danger/15 px-2 py-1 text-danger"
-                      : "rounded-sm border border-hairline bg-panel px-2 py-1 text-dim"
+                      ? "rounded-sm bg-danger/15 px-2.5 py-1 font-mono text-danger tabular-nums transition-colors duration-150"
+                      : "rounded-sm bg-panel px-2.5 py-1 font-mono text-dim tabular-nums transition-colors duration-150"
                 }
               >
                 {cell.part_id}:P{cell.pass_no} {outcomeSymbol(effective)}{flagged ? " ⚠" : ""}
@@ -124,17 +124,17 @@ export function RevisionPanel({
           })}
         </div>
         {selectedPass && (
-          <div data-testid="pass-tooltip" className="rounded-sm border border-hairline bg-panel p-2 text-xs text-text">
-            <div>Action: {selectedPass.action} ({selectedPass.prediction.metric_id} {selectedPass.prediction.expected_direction})</div>
-            <div className="text-dim">Falsified if: {selectedPass.prediction.falsified_if} · {selectedPass.prediction.registered_at}</div>
+          <div data-testid="pass-tooltip" className="rounded-md bg-panel p-2.5 font-sans text-xs text-text">
+            <div>Action: {selectedPass.action} (<span className="font-mono">{selectedPass.prediction.metric_id} {selectedPass.prediction.expected_direction}</span>)</div>
+            <div className="font-mono text-dim tabular-nums">Falsified if: {selectedPass.prediction.falsified_if} · {selectedPass.prediction.registered_at}</div>
             {selectedPass.suspicious_reason && <div className="text-amber">⚠ {selectedPass.suspicious_reason}</div>}
           </div>
         )}
       </div>
 
-      <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-bg p-2.5 font-mono text-xs">
-        <span className="text-dim">METRIC TABLE</span>
-        <table className="w-full text-left" data-testid="metric-diff-table">
+      <div className="flex flex-col gap-2 rounded-md bg-bg p-3 text-xs">
+        <span data-saira="true" className="text-dim">METRIC TABLE</span>
+        <table className="w-full font-mono text-left tabular-nums" data-testid="metric-diff-table">
           <thead>
             <tr className="border-b border-hairline text-dim">
               <th className="pb-1">Metric</th>
@@ -163,28 +163,28 @@ export function RevisionPanel({
         </table>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-bg p-2.5 font-mono text-xs">
+      <div className="flex flex-col gap-2 rounded-md bg-bg p-3 text-xs">
         <div className="flex items-center justify-between">
-          <span className="text-dim">STORAGE NODE TEMP (°C)</span>
-          <div className="flex gap-2">
+          <span data-saira="true" className="text-dim">STORAGE NODE TEMP (°C)</span>
+          <div className="flex gap-2 font-mono">
             {baseLine && <span className="text-dim">-- Base</span>}
             <span className="text-amber">— Sim</span>
             {extLine && <span className="text-cyan">·· Ext</span>}
           </div>
         </div>
-        <svg data-testid="sim-temperature-chart" viewBox="0 0 240 80" className="h-20 w-full rounded-sm border border-hairline bg-panel">
+        <svg data-testid="sim-temperature-chart" viewBox="0 0 240 80" className="h-20 w-full rounded-md bg-panel">
           {baseLine && <polyline data-testid="sim-line-base" points={baseLine} strokeWidth="1.5" strokeDasharray="3 2" className="fill-none stroke-dim" />}
           {newLine && <polyline data-testid="sim-line-sim" points={newLine} strokeWidth="2" className="fill-none stroke-amber" />}
           {extLine && <polyline data-testid="sim-line-external" points={extLine} strokeWidth="1.75" strokeDasharray="2 2" className="fill-none stroke-cyan" />}
         </svg>
         {sandbox && (
-          <div data-testid="sandbox-panel" className="flex items-center justify-between rounded-sm border border-hairline bg-panel px-2 py-1">
+          <div data-testid="sandbox-panel" className="flex items-center justify-between rounded-md bg-panel px-2.5 py-1.5 font-sans">
             <span className="text-dim">Independent check · Google-hosted sandbox</span>
             <Badge variant={sandbox.agrees_with_metrics ? "confirm" : "danger"}>{sandbox.agrees_with_metrics ? "AGREE" : "DISAGREE"}</Badge>
           </div>
         )}
         {benchRuns.length >= 2 && (
-          <div data-testid="benchmark-view" className="border-t border-hairline pt-1 text-xs">
+          <div data-testid="benchmark-view" className="pt-1 font-mono text-xs tabular-nums">
             {benchRuns.map((b) => (
               <div key={b.run_id} className="flex justify-between">
                 <span className="text-amber">{b.orchestrator_model}</span>

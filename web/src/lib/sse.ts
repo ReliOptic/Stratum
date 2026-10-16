@@ -16,6 +16,8 @@ export interface TelemetryState {
   readonly partProgress: Readonly<Record<string, string>>;
   readonly usage: UsageStat | null;
   readonly thoughts: readonly string[];
+  readonly recentEvents: readonly RunEvent[];
+  readonly lastEventAtMs: number | null;
   readonly status: RunStatus | null;
   readonly latestRevision: number;
   readonly connected: boolean;
@@ -31,6 +33,8 @@ export function createInitialTelemetryState(): TelemetryState {
     partProgress: {},
     usage: null,
     thoughts: [],
+    recentEvents: [],
+    lastEventAtMs: null,
     status: null,
     latestRevision: 0,
     connected: false,
@@ -39,23 +43,14 @@ export function createInitialTelemetryState(): TelemetryState {
 }
 
 export function stageToTelemetryLayer(stage: EventStage): TelemetryLayerId {
-  if (stage === "fetch" || stage === "v0") {
-    return "surface";
-  }
-  if (stage === "verify") {
-    return "internal";
-  }
+  if (stage === "fetch" || stage === "v0") return "surface";
+  if (stage === "verify") return "internal";
   return "kernel";
 }
 
 function extractUsageStat(data: Readonly<Record<string, unknown>>): UsageStat | null {
-  const candidate =
-    typeof data.usage === "object" && data.usage !== null
-      ? (data.usage as Record<string, unknown>)
-      : data;
-  if (typeof candidate.context_tokens !== "number") {
-    return null;
-  }
+  const candidate = typeof data.usage === "object" && data.usage !== null ? (data.usage as Record<string, unknown>) : data;
+  if (typeof candidate.context_tokens !== "number") return null;
   return {
     context_tokens: candidate.context_tokens,
     output_tokens: typeof candidate.output_tokens === "number" ? candidate.output_tokens : 0,
@@ -68,10 +63,9 @@ function extractUsageStat(data: Readonly<Record<string, unknown>>): UsageStat | 
 export function reduceRunEvent(
   state: TelemetryState,
   event: RunEvent,
+  nowMs: number = Date.now(),
 ): TelemetryState {
-  if (event.seq <= state.lastSeq) {
-    return state;
-  }
+  if (event.seq <= state.lastSeq) return state;
   const layer = stageToTelemetryLayer(event.stage);
   const completedStages =
     state.activeStage && state.activeStage !== layer && !state.completedStages.includes(state.activeStage)
@@ -86,6 +80,7 @@ export function reduceRunEvent(
         ? event.message
         : null;
   const thoughts = thoughtText ? [...state.thoughts.slice(-19), thoughtText] : state.thoughts;
+  const recentEvents = [...state.recentEvents.slice(-23), event];
 
   const partProgress =
     typeof event.part_id === "string" && event.part_id.length > 0
@@ -119,6 +114,8 @@ export function reduceRunEvent(
     partProgress,
     usage,
     thoughts,
+    recentEvents,
+    lastEventAtMs: nowMs,
     status,
     latestRevision,
     error,
