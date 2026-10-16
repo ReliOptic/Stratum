@@ -61,39 +61,17 @@ async function registerLoopRoutes(page: Page, tracker: MockTracker): Promise<voi
     verdict: "kept", outcome: "confirmed", suspicious: false, suspicious_reason: null, fitted_adjustment: false, at: "2026-10-16T11:31:00Z",
   };
   await page.route("**/api/runs/run-widget-a-001/presets*", (r) =>
-    r.fulfill(
-      jsonRoute([
-        {
-          preset_id: "thermal_margin",
-          title: "Lower Peak Temp",
-          rationale: "Reduce steady-state temperature on core-stage and storage-cell",
-          source_ids: ["src-page-1"],
-          targets: [{ metric_id: "peak_temp_C", comparator: "lte", threshold: 58.0, unit: "C" }],
-        },
-      ]),
-    ),
+    r.fulfill(jsonRoute([{ preset_id: "thermal_margin", title: "Lower Peak Temp", rationale: "Reduce steady-state temperature on core-stage and storage-cell", source_ids: ["src-page-1"], targets: [{ metric_id: "peak_temp_C", comparator: "lte", threshold: 58.0, unit: "C" }] }])),
   );
   await page.route("**/api/runs/run-widget-a-001/loop*", (r) =>
-    r.fulfill(
-      jsonRoute([
-        {
-          revision: 1,
-          label: "V1",
-          confirmed_count: 2,
-          refuted_count: 0,
-          badges: tracker.imported ? ["simulated", "sandbox-checked", "simulink-audited"] : ["simulated", "sandbox-checked"],
-          wall_time_s: 14,
-          context_tokens: 12400,
-          ...(tracker.imported ? { audit: "match", max_abs_diff_C: 0.0 } : {}),
-        },
-      ]),
-    ),
+    r.fulfill(jsonRoute([{ revision: 1, label: "V1", confirmed_count: 2, refuted_count: 0, badges: tracker.imported ? ["simulated", "sandbox-checked", "simulink-audited"] : ["simulated", "sandbox-checked"], wall_time_s: 14, context_tokens: 12400, ...(tracker.imported ? { audit: "match", max_abs_diff_C: 0.0 } : {}) }])),
   );
   await page.route("**/api/runs/run-widget-a-001/variants*", (r) =>
     r.fulfill(
       jsonRoute([
         { variant_id: "Alpha", revision: 1, summary: "2mm Al6061 spreader", weights: { thermal: 1 }, score: 0.91, primary: true },
         { variant_id: "Beta", revision: 1, summary: "4mm air gap", weights: { thermal: 0.8 }, score: 0.78, primary: false },
+        { variant_id: "Gamma", revision: 1, summary: "1.5mm Cu shim", weights: { thermal: 0.85 }, score: 0.83, primary: false },
       ]),
     ),
   );
@@ -149,6 +127,7 @@ test("G3-UI closed loop: 2-step objective review/confirm, matrix, temp chart, MA
   await registerActionRoutes(page, tracker);
 
   await page.goto("/");
+  await expect(page.getByTestId("baltam-planet")).toHaveAttribute("data-fps-target", "60");
   await page.getByTestId("product-url-input").fill("https://example.invalid/widget-a");
   await page.getByTestId("reconstruct-button").click();
   await expect(page.getByTestId("viewport-3d")).toHaveAttribute("data-mapped-parts", "4");
@@ -172,7 +151,9 @@ test("G3-UI closed loop: 2-step objective review/confirm, matrix, temp chart, MA
   await page.getByTestId("modal-close-button").click();
   await page.getByTestId("revise-button").click();
   await expect(page.getByTestId("viewport-3d")).toHaveAttribute("data-glb-rev", "1");
-  await expect(page.getByTestId("variant-card-Alpha")).toBeVisible();
+  await expect(page.getByTestId("variant-card-Alpha")).toHaveAttribute("data-primary", "true");
+  await expect(page.getByTestId("variant-card-Beta")).toBeVisible();
+  await expect(page.getByTestId("variant-card-Gamma")).toBeVisible();
   await expect(page.getByTestId("pass-cell-core-stage-1")).toHaveAttribute("data-outcome-source", "sim");
   await expect(page.getByTestId("pass-cell-core-stage-2")).toHaveAttribute("data-suspicious", "true");
   await expect(page.getByTestId("target-status-peak_temp_C")).toContainText("MET");

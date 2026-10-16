@@ -83,16 +83,18 @@ export function RevisionPanel({
   return (
     <div data-testid="revision-panel" className="grid grid-cols-1 gap-3 pt-2 md:grid-cols-3">
       <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-bg p-2.5 font-mono text-xs">
-        <div className="flex flex-wrap items-center justify-between gap-1">
-          <span className="text-dim">PART × PASS HYPOTHESIS MATRIX</span>
-          <div className="flex flex-wrap gap-1" data-testid="variant-cards">
-            {variants.map((v) => (
-              <div key={v.variant_id} data-testid={`variant-card-${v.variant_id}`} title={v.summary} className="flex items-center gap-1 rounded-sm border border-hairline bg-panel px-1.5 py-0.5">
+        <span className="text-dim">PART × PASS HYPOTHESIS MATRIX</span>
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3" data-testid="variant-cards">
+          {variants.map((v) => (
+            <div key={v.variant_id} data-testid={`variant-card-${v.variant_id}`} data-primary={v.primary ? "true" : "false"} className={v.primary ? "flex flex-col gap-0.5 rounded-sm border border-amber bg-amber/10 px-2 py-1" : "flex flex-col gap-0.5 rounded-sm border border-hairline bg-panel px-2 py-1"}>
+              <div className="flex items-center justify-between gap-1">
                 <Badge variant={v.primary ? "amber" : "dim"}>{v.variant_id}</Badge>
+                {v.primary && <span data-testid={`variant-primary-${v.variant_id}`} className="text-xs text-amber">PRIMARY</span>}
                 {typeof v.score === "number" && <span className="text-dim">{v.score.toFixed(2)}</span>}
               </div>
-            ))}
-          </div>
+              <span className="truncate text-xs text-dim" title={v.summary}>{v.summary}</span>
+            </div>
+          ))}
         </div>
         <div className="flex flex-wrap gap-1.5" data-testid="pass-matrix">
           {passes.map((cell) => {
@@ -116,8 +118,7 @@ export function RevisionPanel({
                       : "rounded-sm border border-hairline bg-panel px-2 py-1 text-dim"
                 }
               >
-                {cell.part_id}:P{cell.pass_no} {outcomeSymbol(effective)}
-                {flagged ? " ⚠" : ""}
+                {cell.part_id}:P{cell.pass_no} {outcomeSymbol(effective)}{flagged ? " ⚠" : ""}
               </button>
             );
           })}
@@ -125,8 +126,7 @@ export function RevisionPanel({
         {selectedPass && (
           <div data-testid="pass-tooltip" className="rounded-sm border border-hairline bg-panel p-2 text-xs text-text">
             <div>Action: {selectedPass.action} ({selectedPass.prediction.metric_id} {selectedPass.prediction.expected_direction})</div>
-            <div className="text-dim">Falsified if: {selectedPass.prediction.falsified_if}</div>
-            <div className="text-dim">Registered: {selectedPass.prediction.registered_at}</div>
+            <div className="text-dim">Falsified if: {selectedPass.prediction.falsified_if} · {selectedPass.prediction.registered_at}</div>
             {selectedPass.suspicious_reason && <div className="text-amber">⚠ {selectedPass.suspicious_reason}</div>}
           </div>
         )}
