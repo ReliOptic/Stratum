@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import math
 
-from build123d import Axis, Box, Cylinder, Location, Rotation, Solid, Sphere, offset
+from build123d import Axis, Box, Cylinder, Location, Rotation, Solid, Sphere, fillet, offset
 
 from stratum_cad.config import CONFIG
 from stratum_cad.errors import CadOpInvalid, CompileFailed
 from stratum_cad.types import CadOp, Part, VALID_PART_ROLES
 
 ALLOWED_OPS: frozenset[str] = frozenset(
-    {"box", "cylinder", "sphere", "shell", "cut_box", "cut_cylinder"}
+    {"box", "rounded_box", "cylinder", "sphere", "shell", "cut_box", "cut_cylinder"}
 )
 
 
@@ -21,18 +21,14 @@ def _get_dim(
     part_id: str,
     op_index: int,
 ) -> float:
-    """Extract and validate a linear dimension parameter in [0.1, 2000.0] mm."""
+    """Extract and validate a linear dimension parameter in [0.2, 2000.0] mm."""
     for key in keys:
         if key in params:
             val = float(params[key])
             if not (CONFIG.min_dim_mm <= val <= CONFIG.max_dim_mm):
                 raise CadOpInvalid(
-                    f"Dimension '{key}'={val} mm out of range "
-                    f"[{CONFIG.min_dim_mm}, {CONFIG.max_dim_mm}] mm.",
-                    recovery_hint=(
-                        f"Set '{key}' between {CONFIG.min_dim_mm} and "
-                        f"{CONFIG.max_dim_mm} mm."
-                    ),
+                    f"Dimension '{key}'={val} mm out of range [{CONFIG.min_dim_mm}, {CONFIG.max_dim_mm}] mm.",
+                    recovery_hint=f"Set '{key}' between {CONFIG.min_dim_mm} and {CONFIG.max_dim_mm} mm.",
                     part_id=part_id,
                     op_index=op_index,
                 )
@@ -57,7 +53,7 @@ def validate_part_ops(part: Part) -> tuple[float | None, float]:
     if not part.ops:
         raise CadOpInvalid(
             "Part must have at least one primitive CadOp.",
-            recovery_hint="Start part.ops with 'box', 'cylinder', or 'sphere'.",
+            recovery_hint="Start part.ops with 'box', 'rounded_box', 'cylinder', or 'sphere'.",
             part_id=part.part_id,
             op_index=0,
         )
@@ -72,7 +68,7 @@ def validate_part_ops(part: Part) -> tuple[float | None, float]:
                 op_index=idx,
             )
         p = cad_op.params
-        if cad_op.op in {"box", "cut_box"}:
+        if cad_op.op in {"box", "rounded_box", "cut_box"}:
             dx = _get_dim(p, ("x_mm", "length_mm", "dx_mm"), part.part_id, idx)
             dy = _get_dim(p, ("y_mm", "width_mm", "dy_mm"), part.part_id, idx)
             dz = _get_dim(p, ("z_mm", "height_mm", "dz_mm"), part.part_id, idx)
@@ -102,11 +98,15 @@ def validate_part_ops(part: Part) -> tuple[float | None, float]:
 def _apply_op(current: Solid | None, cad_op: CadOp, part_id: str, idx: int) -> Solid:
     """Apply a single validated CadOp to the current solid."""
     p = cad_op.params
-    if cad_op.op == "box":
+    if cad_op.op in {"box", "rounded_box"}:
         dx = _get_dim(p, ("x_mm", "length_mm", "dx_mm"), part_id, idx)
         dy = _get_dim(p, ("y_mm", "width_mm", "dy_mm"), part_id, idx)
         dz = _get_dim(p, ("z_mm", "height_mm", "dz_mm"), part_id, idx)
-        prim = Box(dx, dy, dz)
+        prim: Solid = Box(dx, dy, dz)
+        if cad_op.op == "rounded_box":
+            r_f = float(p.get("fillet_mm", p.get("radius_mm", 0.0)))
+            if r_f > 0.0:
+                prim = fillet(prim.edges().filter_by(Axis.Z), radius=min(r_f, 0.45 * min(dx, dy))).solids()[0]
         return prim if current is None else (current + prim).solids()[0]
     if cad_op.op == "cylinder":
         r = _get_dim(p, ("radius_mm", "r_mm"), part_id, idx)

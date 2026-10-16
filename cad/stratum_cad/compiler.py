@@ -108,7 +108,7 @@ def _check_pairwise_interference(solids: list[tuple[Part, Solid]]) -> CheckResul
             if ov > 1e-3:
                 max_overlap = max(max_overlap, ov)
                 tag = f"{p_a.part_id}<->{p_b.part_id}"
-                if p_a.nested_in == p_b.part_id or p_b.nested_in == p_a.part_id:
+                if p_a.nested_in in (p_b.part_id, "*") or p_b.nested_in in (p_a.part_id, "*"):
                     declared.append(tag)
                 else:
                     undeclared.append(tag)
@@ -134,12 +134,15 @@ def compile_parts(parts: list[Part], *, run_id: str = "widget-a", revision: int 
     """Compile a list of Part definitions into STEP bytes, GLB bytes, and a checked Manifest."""
     if not parts:
         raise CompileFailed("Cannot compile empty parts list.", recovery_hint="Provide at least one Part.")
+    from stratum_cad.adapters import adapt_parts
+
+    internal_parts = adapt_parts(parts)
     solids: list[tuple[Part, Solid]] = []
     manifest_parts: list[PartManifestEntry] = []
     invalid_ids: list[str] = []
     zero_vol_ids: list[str] = []
 
-    for part in parts:
+    for part in internal_parts:
         solid, min_wall_mm, vent_area_mm2 = build_part_solid(part)
         vol, area = float(solid.volume), float(solid.area)
         if not solid.is_valid:

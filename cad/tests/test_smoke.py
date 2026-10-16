@@ -54,7 +54,59 @@ def test_invalid_box_dim_raises_typed_error() -> None:
 
 def test_public_interface_exports() -> None:
     """Verify all required public functions and catalog entries exist."""
-    for name in ("compile_parts", "compute_metrics", "metric_catalog", "simulate"):
+    for name in ("compile_parts", "compute_metrics", "metric_catalog", "simulate", "export_test_box"):
         assert hasattr(stratum_cad, name)
     catalog = metric_catalog()
     assert len(catalog) == 8
+
+
+def test_wall_thickness_and_dim_lower_bound_0_2mm() -> None:
+    """Verify 0.2 mm lower bound passes and < 0.2 mm raises CadOpInvalid."""
+    ok_part = Part(
+        part_id="widget_a_shell_02",
+        role="enclosure",
+        ops=[
+            CadOp(op="box", params={"x_mm": 10.0, "y_mm": 10.0, "z_mm": 10.0}),
+            CadOp(op="shell", params={"thickness_mm": 0.2}),
+        ],
+    )
+    res = compile_parts([ok_part], run_id="widget-a", revision=0)
+    assert res.manifest.checks["valid_solid"].passed is True
+    assert res.manifest.parts[0].min_wall_mm == 0.2
+
+    bad_part = Part(
+        part_id="widget_a_shell_019",
+        role="enclosure",
+        ops=[
+            CadOp(op="box", params={"x_mm": 10.0, "y_mm": 10.0, "z_mm": 10.0}),
+            CadOp(op="shell", params={"thickness_mm": 0.19}),
+        ],
+    )
+    try:
+        compile_parts([bad_part], run_id="widget-a", revision=0)
+    except CadOpInvalid as exc:
+        assert exc.code == "CAD_OP_INVALID"
+    else:
+        raise AssertionError("Expected CadOpInvalid for 0.19 mm wall (< 0.2 mm lower bound)")
+
+
+def test_contract_adapter_roundtrip_widget_a() -> None:
+    """Compile, compute metrics, and simulate directly from contract EngineeringSpec fixture."""
+    import json
+    from pathlib import Path
+    from contracts.generated.python import models as cm
+    from stratum_cad import compute_metrics, simulate
+
+    root = Path(__file__).resolve().parents[2]
+    raw_spec = json.loads((root / "contracts/fixtures/widget-a/spec_v0.json").read_text("utf-8"))
+    contract_spec = cm.EngineeringSpec.model_validate(raw_spec)
+
+    comp = compile_parts(contract_spec.parts, run_id=contract_spec.run_id, revision=contract_spec.revision)
+    c_manifest = comp.manifest.to_contract()
+    c_metrics = compute_metrics(contract_spec, c_manifest).to_contract()
+    c_sim = simulate(contract_spec, c_manifest).to_contract(contract_spec)
+
+    assert cm.Manifest.model_validate_json(c_manifest.model_dump_json()).run_id == "run-widget-a-001"
+    assert len(cm.MetricSet.model_validate_json(c_metrics.model_dump_json()).values) == 8
+    assert len(cm.SimResult.model_validate_json(c_sim.model_dump_json()).nodes) == 4
+

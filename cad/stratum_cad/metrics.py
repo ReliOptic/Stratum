@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import math
 
+from typing import Any
+
+from stratum_cad.adapters import adapt_manifest, adapt_spec
 from stratum_cad.logging_utils import log_event
 from stratum_cad.materials import get_material_props
 from stratum_cad.rc_network import bbox_gap_and_overlap_area
@@ -104,8 +107,10 @@ def _compute_role_geometry_metrics(by_role: dict[str, list[PartManifestEntry]]) 
     return out
 
 
-def compute_metrics(spec: EngineeringSpec, manifest: Manifest) -> MetricSet:
+def compute_metrics(spec: EngineeringSpec | Any, manifest: Manifest | Any) -> MetricSet:
     """Compute all 8 deterministic engineering metrics for an assembly."""
+    spec = adapt_spec(spec)
+    manifest = adapt_manifest(manifest, spec)
     by_role: dict[str, list[PartManifestEntry]] = {}
     for mp in manifest.parts:
         by_role.setdefault(mp.role, []).append(mp)

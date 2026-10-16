@@ -6,6 +6,9 @@ import csv
 import io
 import json
 
+from typing import Any
+
+from stratum_bridge.adapters import adapt_sim_result
 from stratum_bridge.config import BRIDGE_CONFIG
 from stratum_bridge.errors import BundleMismatch, ResultsSchemaInvalid
 from stratum_bridge.logging_utils import log_event
@@ -17,15 +20,17 @@ from stratum_bridge.parsers import (
     _reaudit_against_expected,
 )
 from stratum_bridge.types import ExternalSample, ExternalSimResult
+from stratum_cad.adapters import adapt_spec
 from stratum_cad.types import EngineeringSpec, SimResult
 
 
 def parse_external_results_json(
     payload: bytes,
     expected_bundle_sha256: str,
-    expected: SimResult,
+    expected: SimResult | Any,
 ) -> ExternalSimResult:
     """Validate and server-audit JSON payload posted by MATLAB Online stratum.m."""
+    expected = adapt_sim_result(expected)
     if len(payload) > BRIDGE_CONFIG.max_upload_bytes:
         raise ResultsSchemaInvalid(
             f"JSON payload size {len(payload)} exceeds {BRIDGE_CONFIG.max_upload_bytes} bytes.",
@@ -103,9 +108,10 @@ def parse_external_results_json(
 def parse_measurement(
     files: dict[str, bytes],
     run_id: str,
-    spec: EngineeringSpec,
+    spec: EngineeringSpec | Any,
 ) -> ExternalSimResult:
     """Parse lab measurement.csv and measurement_meta.txt to upgrade evidence to OBSERVED."""
+    spec = adapt_spec(spec)
     decoded = _decode_and_check_size(files, REQUIRED_MEASUREMENT_FILES)
     meta = _parse_kv_manifest(decoded["measurement_meta.txt"], "measurement_meta.txt")
     for req_key in ("method", "instrument", "ambient_C"):

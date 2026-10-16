@@ -38,3 +38,8 @@ class ExternalSimResult:
     timestamp: str | None = None
     series: list[ExternalSample] = field(default_factory=list)
     meta: dict[str, str] = field(default_factory=dict)
+
+    def to_contract(self, revision: int | None = None, ambient_c: float = 25.0) -> object:
+        """Convert this internal ExternalSimResult to the contract Pydantic model."""
+        from stratum_bridge.adapters import to_contract_external_result
+        return to_contract_external_result(self, revision=revision, ambient_c=ambient_c)

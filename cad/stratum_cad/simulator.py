@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
+from stratum_cad.adapters import adapt_manifest, adapt_spec
 from stratum_cad.logging_utils import log_event
 from stratum_cad.rc_network import build_rc_network, generate_stress_scenario
 from stratum_cad.types import EngineeringSpec, Manifest, SimResult, SimSample
 
 
-def simulate(spec: EngineeringSpec, manifest: Manifest) -> SimResult:
+def simulate(spec: EngineeringSpec | Any, manifest: Manifest | Any) -> SimResult:
     """Simulate transient node temperatures using unconditionally stable Backward Euler.
 
     Governing discrete equation for temperature rise theta(t) = T(t) - T_ambient:
         (C + dt * L) * theta_{k+1} = C * theta_k + dt * Q(t_{k+1})
     """
+    spec = adapt_spec(spec)
+    manifest = adapt_manifest(manifest, spec)
     net = build_rc_network(spec, manifest)
     times_s, q_mat = generate_stress_scenario(spec)
     dt = float(spec.dt_s)

@@ -25,7 +25,7 @@ def build_smoke_box_step(size_mm: float = 10.0, run_id: str = "smoke") -> bytes:
         raise CadOpInvalid(
             f"Box dimension {size_mm} mm outside valid range "
             f"[{CONFIG.min_dim_mm}, {CONFIG.max_dim_mm}] mm.",
-            recovery_hint="Specify size_mm between 0.1 mm and 2000.0 mm.",
+            recovery_hint="Specify size_mm between 0.2 mm and 2000.0 mm.",
             part_id="smoke_box",
             op_index=0,
         )
@@ -58,4 +58,11 @@ def build_smoke_box_step(size_mm: float = 10.0, run_id: str = "smoke") -> bytes:
         size_mm=size_mm,
         step_bytes=len(step_bytes),
     )
+    return step_bytes
+
+
+def export_test_box(step_path: str | Path, size_mm: float = 10.0) -> bytes:
+    """Export a deterministic test box STEP to step_path and return its bytes."""
+    step_bytes = build_smoke_box_step(size_mm=size_mm)
+    Path(step_path).write_bytes(step_bytes)
     return step_bytes

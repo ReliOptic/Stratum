@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+from stratum_cad.adapters import (
+    adapt_manifest,
+    adapt_parts,
+    adapt_spec,
+    from_contract_part,
+    to_contract_manifest,
+    to_contract_metric_set,
+    to_contract_sim_result,
+)
 from stratum_cad.compiler import compile_parts
 from stratum_cad.errors import (
     CadOpInvalid,
@@ -19,7 +28,7 @@ from stratum_cad.rc_network import (
     generate_stress_scenario,
 )
 from stratum_cad.simulator import simulate
-from stratum_cad.smoke import build_smoke_box_step
+from stratum_cad.smoke import build_smoke_box_step, export_test_box
 from stratum_cad.types import (
     BasisType,
     CadOp,
@@ -67,12 +76,20 @@ __all__ = [
     "SimSample",
     "StratumCadError",
     "StressPulse",
+    "adapt_manifest",
+    "adapt_parts",
+    "adapt_spec",
     "build_rc_network",
     "build_smoke_box_step",
     "compile_parts",
     "compute_metrics",
+    "export_test_box",
+    "from_contract_part",
     "generate_stress_scenario",
     "get_material_props",
     "metric_catalog",
     "simulate",
+    "to_contract_manifest",
+    "to_contract_metric_set",
+    "to_contract_sim_result",
 ]
