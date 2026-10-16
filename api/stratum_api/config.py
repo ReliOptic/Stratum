@@ -91,9 +91,14 @@ def load_config(environ: dict[str, str] | None = None) -> AppConfig:
     k_service = env.get("K_SERVICE", "").strip() or None
     raw_secret = env.get("SESSION_SECRET", "").strip()
     session_secret = raw_secret if k_service else (raw_secret or DEV_SESSION_SECRET)
+    gcp_project = (
+        env.get("GCP_PROJECT", "").strip()
+        or env.get("GOOGLE_CLOUD_PROJECT", "").strip()
+        or "h2gdm-hack26icn-2691"
+    )
     cfg = AppConfig(
-        gcp_project=env.get("GCP_PROJECT", "stratum-dev").strip(),
-        gcp_region=env.get("GCP_REGION", "us-central1").strip(),
+        gcp_project=gcp_project,
+        gcp_region=env.get("GCP_REGION", "asia-northeast3").strip(),
         gemini_backend=_parse_gemini_backend(
             env.get("GEMINI_BACKEND", "vertex")
         ),
